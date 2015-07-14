@@ -6,15 +6,53 @@ Utilities used in EIS calculations, corrections and fits.
 """
 
 from scipy.io import readsav
+from scipy.interpolate import interp1d
 import numpy as np
 import datetime as dt
 import warnings
+import re
+import urllib
 
 
 __housekeeping_memo__ = {}
 
 
-def get_hk_temperatures_from_file(filename, time):
+def get_dict_from_file(filename):
+    """
+    Reads an IDL .sav file containing EIS housekeeping data and returns its
+    contents as a python dictionary. For speed, if the file has already been
+    read, it may return the contents from a hidden memo. If the file is not
+    found in the location specified it will attempt to download it once and
+    save the file in the location originally specified.
+
+    Parameters
+    ----------
+    filename: str
+        Location of the file to be read. Note that as shorthand or simply to
+        force a download (if the file hasn't been read already) one can use the
+        shorthand "yyymm" (e.g. "200805") instead of the entire qualified
+        location of the file.
+    """
+    key = int(re.findall(r"(\d{6})(\.sav)?$", filename)[0][0])
+    if key in __housekeeping_memo__:
+        file_dict = __housekeeping_memo__[key]
+    else:
+        try:
+            file_dict = readsav(filename, python_dict=True)
+        except IOError:
+            url = "http://sdc.uio.no/eis_wave_corr_hk_data/eis3_" + \
+                   str(key) + ".sav"
+            if not filename.endswith(".sav"):
+                filename += ".sav"
+            urllib.urlretrieve(url, filename=filename)
+            file_dict = readsav(filename, python_dict=True)
+            warnings.warn("File was not found, so it was downloaded and " +
+                          "placed at the given location", UserWarning)
+        __housekeeping_memo__.update({key: file_dict})
+    return file_dict
+
+
+def get_hk_temperatures(filename, time, _pos=None):
     """
     Given a housekeeping filename and a time, returns the array of temperature
     correction values for that time. If the time is out of range for that file
@@ -28,12 +66,8 @@ def get_hk_temperatures_from_file(filename, time):
     time: datetime object
         The date and time of the observation
     """
-    if filename in __housekeeping_memo__:
-        file_dict = __housekeeping_memo__[filename]
-    else:
-        file_dict = readsav(filename, python_dict=True)
-        __housekeeping_memo__.update({filename: file_dict})
-    position = time_to_index(time, file_dict['time'])
+    file_dict = get_dict_from_file(filename)
+    position = time_to_index(time, file_dict['time']) if _pos is None else _pos
     pos_before = position - 5 if position > 5 else 0
     times = file_dict['time'].shape[0]
     pos_after = position + 5 if position + 5 < times else times - 1
@@ -97,15 +131,19 @@ def _get_corr_parameters(time):
     """
     Returns the correct correction parameters for the given time. They are
     different because of three adjustments that have been made to the device.
+    The coefficients were calculated from S. Kamio's neural network approach.
 
     Parameters
     ----------
-    time: datetime object
-        The time of the observation
+    time: float
+        The time of the observation, in SSW format
     """
-    adj1 = dt.datetime(2007, 11, 29, 00, 00, 00)  # Heater adjustment time
-    adj2 = dt.datetime(2008, 8, 24, 00, 00, 00)  # slit focus adjustment
-    adj3 = dt.datetime(2008, 10, 21, 8, 00, 00)  # grating focus adjustment
+    # Heater adjustment time
+    adj1 = datetime_to_ssw_time(dt.datetime(2007, 11, 29, 00, 00, 00))
+    # slit focus adjustment
+    adj2 = datetime_to_ssw_time(dt.datetime(2008, 8, 24, 00, 00, 00))
+    # grating focus adjustment
+    adj3 = datetime_to_ssw_time(dt.datetime(2008, 10, 21, 8, 00, 00))
     if time < adj1:
         correction_arr = np.array([4.10562e-01, 2.51204e+00, -7.03979e-01,
                                    1.21183e+00, -1.46165e+00, -2.03801e+00,
@@ -150,3 +188,39 @@ def _get_corr_parameters(time):
         pixel_ref = 1.34281e+3
         pixel_ref += 4.88 if adj2 < time < adj3 else 0
     return correction_arr, pixel_ref
+
+
+def calc_hk_orbital_corrections(filename, times, slit2=False):
+    """
+    For a given filename (or month in the format 'yyyymm') and times of
+    measurements, calculate the corrections needed on each of those times,
+    interpolating if necessary when the file does not contain those exact times
+
+    Parameters
+    ----------
+    filename: str
+        Location of the file to be used or date in the format 'yyyymm'
+    times: numpy array of datetime objects
+        Times the observations occurred
+    slit2: boolean
+        Whether the observation was made using the 2" slit
+    """
+    # TODO: include good and bad data samples
+    measurement_times = get_dict_from_file(filename)['time']
+    times = map(datetime_to_ssw_time, times)
+    min_wanted_index = np.argmin(measurement_times - np.min(times))
+    max_wanted_index = np.argmax(measurement_times - np.max(times))
+    pixels = np.zeros(max_wanted_index - min_wanted_index + 1)
+    for i in range(min_wanted_index, max_wanted_index):
+        temperatures = get_hk_temperatures(filename, None, _pos=i)
+        pixels[min_wanted_index - i] = correct_pixel(temperatures,
+                                                     measurement_times[i],
+                                                     slit2)
+    shifted_corrections_fun = interp1d(measurement_times, pixels)
+    return shifted_corrections_fun(times)
+
+
+def datetime_to_ssw_time(time):
+    epoch = dt.datetime(1979, 1, 1, 0, 0, 0)
+    delta = time - epoch
+    return delta.total_seconds()
