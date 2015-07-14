@@ -10,6 +10,9 @@ import numpy as np
 import datetime as dt
 
 
+housekeeping_memo = {}
+
+
 def get_hk_temperatures_from_file(filename, time):
     """
     Given a housekeeping filename and a time, returns the array of temperature
@@ -24,7 +27,11 @@ def get_hk_temperatures_from_file(filename, time):
     time: datetime object
         The date and time of the observation
     """
-    file_dict = readsav(filename, python_dict=True)
+    if filename in housekeeping_memo:
+        file_dict = housekeeping_memo[filename]
+    else:
+        file_dict = readsav(filename, python_dict=True)
+        housekeeping_memo.update({filename: file_dict})
     position = time_to_index(time, file_dict['time'])
     pos_before = position - 5 if position > 5 else 0
     times = file_dict['time'].shape[0]
@@ -42,6 +49,18 @@ def get_hk_temperatures_from_file(filename, time):
 
 
 def time_to_index(time, times_arr):
+    """
+    Given a time and an array of SSW-based times, finds the index of the
+    nearest time in that array. Solarsoft times are the number of seconds
+    elapsed since 1979-01-01 00:00:00.
+
+    Parameters
+    ----------
+    time: datetime object
+        The time to be found.
+    times_arr: numpy array
+        Array of times in SSW format
+    """
     epoch = dt.datetime(1979, 01, 01, 00, 00, 00)  # Solarsoft epoch
     dif = time - epoch
     timestamp = dif.total_seconds()
