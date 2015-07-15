@@ -7,9 +7,15 @@ This is an Astropy affiliated package.
 # Affiliated packages may add whatever they like to this file, but
 # should keep this content at the top.
 # ----------------------------------------------------------------------------
-from ._astropy_init import *
+from __future__ import absolute_import
 # ----------------------------------------------------------------------------
 
-# For egg_info test builds to pass, put package imports here.
-if not _ASTROPY_SETUP_:
-    from example_mod import *
+try:
+    from .version import version as __version__
+except ImportError:
+    __version__ = ''
+    
+try:
+    from .version import githash as __githash__
+except ImportError:
+    __githash__ = ''
