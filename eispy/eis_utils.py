@@ -10,6 +10,7 @@ from scipy.interpolate import interp1d
 import numpy as np
 import datetime as dt
 import warnings
+import os
 import re
 import urllib
 
@@ -37,13 +38,15 @@ def get_dict_from_file(filename):
     if key in __housekeeping_memo__:
         file_dict = __housekeeping_memo__[key]
     else:
+        filename = os.getcwd() + '/' + filename
+        if not filename.endswith(".sav"):
+                filename += ".sav"
         try:
+            print filename
             file_dict = readsav(filename, python_dict=True)
         except IOError:
             url = "http://sdc.uio.no/eis_wave_corr_hk_data/eis3_" + \
                    str(key) + ".sav"
-            if not filename.endswith(".sav"):
-                filename += ".sav"
             urllib.urlretrieve(url, filename=filename)
             file_dict = readsav(filename, python_dict=True)
             warnings.warn("File was not found, so it was downloaded and " +
@@ -111,7 +114,7 @@ def correct_pixel(temps, time=None, slit2=False):
     correction_arr, pixel_ref = _get_corr_parameters(time)
     slit2_offset = -8.2
     pixel_ref += slit2_offset if slit2 else 0
-    return np.sum(correction_arr * (temps - 15) / 10) + pixel_ref
+    return np.sum(correction_arr * (temps - 15.0) / 10.0) + pixel_ref
 
 
 def _get_corr_parameters(time):
