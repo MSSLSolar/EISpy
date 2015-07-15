@@ -65,9 +65,16 @@ def get_hk_temperatures(filename, time, _pos=None):
         the particular month.
     time: datetime object
         The date and time of the observation
+    _pos: int
+        The index of the desired time in the file's time field. This overrides
+        the time argument, and should be used internally only.
     """
     file_dict = get_dict_from_file(filename)
-    position = time_to_index(time, file_dict['time']) if _pos is None else _pos
+    if _pos is None:
+        timestamp = datetime_to_ssw_time(time)
+        position = np.argmin(file_dict['time'] - timestamp)
+    else:
+        position = _pos
     pos_before = position - 5 if position > 5 else 0
     times = file_dict['time'].shape[0]
     pos_after = position + 5 if position + 5 < times else times - 1
@@ -81,26 +88,6 @@ def get_hk_temperatures(filename, time, _pos=None):
     temps[16:25] = [file_dict['data'][pos_before].temp[i] for i in aux_temps]
     temps[25:] = [file_dict['data'][pos_after].temp[i] for i in aux_temps]
     return temps
-
-
-def time_to_index(time, times_arr):
-    """
-    Given a time and an array of SSW-based times, finds the index of the
-    nearest time in that array. Solarsoft times are the number of seconds
-    elapsed since 1979-01-01 00:00:00.
-
-    Parameters
-    ----------
-    time: datetime object
-        The time to be found.
-    times_arr: numpy array
-        Array of times in SSW format
-    """
-    epoch = dt.datetime(1979, 01, 01, 00, 00, 00)  # Solarsoft epoch
-    dif = time - epoch
-    timestamp = dif.total_seconds()
-    closest = np.argmin(times_arr - timestamp)
-    return closest
 
 
 def correct_pixel(temps, time=None, slit2=False):
@@ -207,7 +194,7 @@ def calc_hk_orbital_corrections(filename, times, slit2=False):
     """
     # TODO: include good and bad data samples
     measurement_times = get_dict_from_file(filename)['time']
-    times = map(datetime_to_ssw_time, times)
+    times = [datetime_to_ssw_time(t) for t in times]
     min_wanted_index = np.argmin(measurement_times - np.min(times))
     max_wanted_index = np.argmax(measurement_times - np.max(times))
     pixels = np.zeros(max_wanted_index - min_wanted_index + 1)
@@ -221,6 +208,15 @@ def calc_hk_orbital_corrections(filename, times, slit2=False):
 
 
 def datetime_to_ssw_time(time):
-    epoch = dt.datetime(1979, 1, 1, 0, 0, 0)
+    """
+    Converts a datetime oject into SSW-format timestamp, which is the number of
+    seconds elapsed since 1979-01-01 00:00:00.
+
+    Parameters
+    ----------
+    time: datetime object
+        The datetime object to convert.
+    """
+    epoch = dt.datetime(1979, 1, 1, 0, 0, 0)   # Solarsoft epoch
     delta = time - epoch
     return delta.total_seconds()
