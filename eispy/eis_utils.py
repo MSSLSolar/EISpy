@@ -10,15 +10,14 @@ from scipy.interpolate import interp1d
 import numpy as np
 import datetime as dt
 import warnings
-import os
-import re
+import sunpy
 import urllib
 
 
 __housekeeping_memo__ = {}
 
 
-def get_dict_from_file(filename):
+def get_dict_from_file(date, prefix="eis3"):
     """
     Reads an IDL .sav file containing EIS housekeeping data and returns its
     contents as a python dictionary. For speed, if the file has already been
@@ -28,34 +27,33 @@ def get_dict_from_file(filename):
 
     Parameters
     ----------
-    filename: str
-        Location of the file to be read. Note that as shorthand or simply to
-        force a download (if the file hasn't been read already) one can use the
-        shorthand "yyyymm" (e.g. "200805") instead of the entire qualified
-        location of the file.
+    date: date or datetime object
+        Date of the observation required. If the file is present in the sunpy
+        data directory, it will be read from there, or downloaded to that
+        location if it isn't.
+    prefix: str
+        file prefix (eis3 for thermal correction, fpp1 for doppler shift)
     """
-    key = int(re.findall(r"(\d{6})(\.sav)?$", filename)[0][0])
+    key = date.year * 100 + date.month
+    download_dir = sunpy.config.get("downloads", "download_dir")
+    download_dir += "/EIS_corrections/" + prefix + "_" + str(key) + ".sav"
     if key in __housekeeping_memo__:
         file_dict = __housekeeping_memo__[key]
     else:
-        filename = os.getcwd() + '/' + filename
-        if not filename.endswith(".sav"):
-            filename += ".sav"
         try:
-            print filename
-            file_dict = readsav(filename, python_dict=True)
+            file_dict = readsav(download_dir, python_dict=True)
         except IOError:
             url = "http://sdc.uio.no/eis_wave_corr_hk_data/eis3_" + \
                    str(key) + ".sav"
-            urllib.urlretrieve(url, filename=filename)
-            file_dict = readsav(filename, python_dict=True)
+            urllib.urlretrieve(url, filename=download_dir)
+            file_dict = readsav(download_dir, python_dict=True)
             warnings.warn("File was not found, so it was downloaded and " +
                           "placed at the given location", UserWarning)
         __housekeeping_memo__.update({key: file_dict})
     return file_dict
 
 
-def get_hk_temperatures(filename, time, _pos=None):
+def get_hk_temperatures(time, _pos=None):
     """
     Given a housekeeping filename and a time, returns the array of temperature
     correction values for that time. If the time is out of range for that file
@@ -63,16 +61,15 @@ def get_hk_temperatures(filename, time, _pos=None):
 
     Parameters
     ----------
-    filename: str
-        The location of an IDL .sav file containing the housekeeping data for
-        the particular month.
+
     time: datetime object
-        The date and time of the observation
+        The date and time of the observation. Should be present even if it is
+        overridden because it is used to read the appropriate file
     _pos: int
         The index of the desired time in the file's time field. This overrides
         the time argument, and should be used internally only.
     """
-    file_dict = get_dict_from_file(filename)
+    file_dict = get_dict_from_file(time)
     if _pos is None:
         timestamp = datetime_to_ssw_time(time)
         position = np.argmin(file_dict['time'] - timestamp)
@@ -180,7 +177,7 @@ def _get_corr_parameters(time):
     return correction_arr, pixel_ref
 
 
-def calc_hk_orbital_corrections(filename, times, slit2=False):
+def calc_hk_orbital_corrections(times, slit2=False):
     """
     For a given filename (or month in the format 'yyyymm') and times of
     measurements, calculate the corrections needed on each of those times,
@@ -188,21 +185,19 @@ def calc_hk_orbital_corrections(filename, times, slit2=False):
 
     Parameters
     ----------
-    filename: str
-        Location of the file to be used or date in the format 'yyyymm'
     times: numpy array of datetime objects
         Times the observations occurred
     slit2: boolean
         Whether the observation was made using the 2" slit
     """
     # TODO: include good and bad data samples
-    measurement_times = get_dict_from_file(filename)['time']
+    measurement_times = get_dict_from_file(times[0])['time']
     times = [datetime_to_ssw_time(t) for t in times]
     min_wanted_index = np.argmin(measurement_times - np.min(times))
     max_wanted_index = np.argmax(measurement_times - np.max(times))
     pixels = np.zeros(max_wanted_index - min_wanted_index + 1)
     for i in range(min_wanted_index, max_wanted_index):
-        temperatures = get_hk_temperatures(filename, None, _pos=i)
+        temperatures = get_hk_temperatures(times[0], _pos=i)
         pixels[min_wanted_index - i] = correct_pixel(temperatures,
                                                      measurement_times[i],
                                                      slit2)

@@ -100,7 +100,7 @@ def _is_in_window(key, window):
     '''
     end = re.findall(r'\d+$', key)  # finds numbers at the end of the key
     if len(end) == 0:
-        return False
+        return True
     else:
         return window == int(end[0])
 
