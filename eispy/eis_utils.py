@@ -12,9 +12,14 @@ import datetime as dt
 import warnings
 import sunpy
 import urllib
-
+from math import sqrt
+import astropy.constants as const
 
 __housekeeping_memo__ = {}
+__dispersion_long__ = 0.022332  # Constant value for long wavelength
+__dispersion_short__ = 0.022317  # Constant value for short wavelength
+__disp_sq_long__ = -1.329e-8  # Quadratic term, long wavelength
+__disp_sq_short__ = -1.268e-8  # Quadratic term, short wavelength
 
 
 def get_dict_from_file(date, prefix="eis3"):
@@ -274,3 +279,35 @@ def calc_slit_tilt(y_window_start, n_y_pixels, date, wavelength, slit):
     y_polyval = np.polyval(poly_coefs[::-1], y_pixels)
     dispersion_factor = 0.0223
     return y_polyval * dispersion_factor
+
+
+def calc_dispersion(wavelength):
+    ccd_pix = wavelength_to_ccd_pixel(wavelength)
+    if wavelength > 230:  # Long lambda detector
+        return __dispersion_long__ + __disp_sq_long__ * ccd_pix
+    else:
+        return __dispersion_short__ + __disp_sq_short__ * ccd_pix
+
+
+def wavelength_to_ccd_pixel(wavelength):
+    if wavelength > 230:
+        refwl = 199.9389
+        dln = __dispersion_long__
+        dsq = __disp_sq_long__
+    else:
+        refwl = 166.131
+        dln = __dispersion_short__
+        dsq = __disp_sq_short__
+    return (-dln + sqrt(dln**2 - 4 * dsq * (refwl - wavelength))) / 2 / dsq
+
+
+def calc_doppler_shift(times):
+    fpp_dict = get_dict_from_file(times[0], prefix="fpp")
+    ssw_times = [datetime_to_ssw_time(t) for t in times]
+    # File has data as an array of 1-tuples for some reason...
+    data = np.array([v[0] for v in fpp_dict['data']])
+    fpp_times = np.array(fpp_dict['time'])
+    data_at_times_wanted = interp1d(fpp_times, data)(ssw_times)
+    dispersion = calc_dispersion(195.12)  # FeXII line
+    doppler_shift = data_at_times_wanted / const.c.value * 195.12 / dispersion
+    return doppler_shift
