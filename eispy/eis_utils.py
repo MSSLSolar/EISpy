@@ -177,7 +177,7 @@ def _get_corr_parameters(time):
     return correction_arr, pixel_ref
 
 
-def calc_hk_orbital_corrections(times, slit2=False):
+def calc_hk_thermal_corrections(times, slit2=False):
     """
     For a given filename (or month in the format 'yyyymm') and times of
     measurements, calculate the corrections needed on each of those times,
