@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 # Author: Mateo Inchaurrandieta <mateo.inchaurrandieta@gmail.com>
-# pylint: disable=E1101
+# pylint: disable=E1101, C0330
 """
 Utilities used in EIS calculations, corrections and fits.
 """
@@ -31,7 +31,7 @@ def get_dict_from_file(filename):
     filename: str
         Location of the file to be read. Note that as shorthand or simply to
         force a download (if the file hasn't been read already) one can use the
-        shorthand "yyymm" (e.g. "200805") instead of the entire qualified
+        shorthand "yyyymm" (e.g. "200805") instead of the entire qualified
         location of the file.
     """
     key = int(re.findall(r"(\d{6})(\.sav)?$", filename)[0][0])
@@ -40,7 +40,7 @@ def get_dict_from_file(filename):
     else:
         filename = os.getcwd() + '/' + filename
         if not filename.endswith(".sav"):
-                filename += ".sav"
+            filename += ".sav"
         try:
             print filename
             file_dict = readsav(filename, python_dict=True)
@@ -223,3 +223,59 @@ def datetime_to_ssw_time(time):
     epoch = dt.datetime(1979, 1, 1, 0, 0, 0)   # Solarsoft epoch
     delta = time - epoch
     return delta.total_seconds()
+
+
+def calc_slit_tilt(y_window_start, n_y_pixels, date, wavelength, slit):
+    """
+    Calculates the slit tilt correction, returning it as an array to be applied
+    to each pixel in the observation
+
+    Parameters
+    ----------
+    y_window_start: int
+        The pixel where the observation starts
+    n_y_pixels: int
+        The number of y pixels from the observation
+    date:
+        The date of the observation. This is used because the slit focus was
+        adjusted on Aug 24, 2008.
+    wavelength: 'SHORT' or 'LONG'
+        The corrections depend on whether the observation was done using the
+        short or long wavelength modes of the instrument.
+    slit: 1 or 2
+        Which of the two slits was used in the observation.
+    """
+    slit_focus_adjustment = dt.date(2008, 8, 24)
+    coefficients = np.array(  # Before adjustment, short wl, 2" slit
+                           [[-2.7607165427059641e+00, 6.4390116579832180e-03,
+                             -2.7122949886142483e-06, 1.3035120912928136e-09],
+                              # Before adjustment, short wl, 1" slit
+                            [-5.5413445912854886e-01, 1.6348272018403623e-03,
+                             -1.1681674813813158e-06, 1.7382970471312863e-10],
+                              # Before adjustment, long wl, 2" slit
+                            [-2.5786595570389181e+00, 6.1481799132252490e-03,
+                             -3.1526317889607469e-06, 1.9165497210094085e-09],
+                              # Before adjustment, long wl, 1" slit
+                            [-3.8458103837911040e-01, 1.3331898117030505e-03,
+                             -1.5399093968859745e-06, 7.8727203402240153e-10],
+                              # After adjustment, short wl, 2" slit
+                            [-3.0444030416965404e+00, 6.4056986231720847e-03,
+                             -8.0170597073123649e-07, -1.8739881646780448e-10],
+                              # After adjustment, short wl, 1" slit
+                            [-8.5068355624974856e-01, 2.2398405213417405e-03,
+                             -1.0665536954454296e-06, -1.2311442746502073e-10],
+                              # After adjustment, long wl, 2" slit
+                            [-2.4247171434108168e+00, 5.0832726508360793e-03,
+                             -7.9727705770693547e-07, 2.3158597348832410e-10],
+                              # After adjustment, long wl, 1" slit
+                            [-2.0225535365170799e-01, 7.4854735225926561e-04,
+                             -7.6258247316829397e-07, 1.4085716859395248e-10]])
+    coef_index = 0
+    coef_index += 4 if date > slit_focus_adjustment else 0
+    coef_index += 2 if wavelength is 'LONG' else 0
+    coef_index += 1 if slit == 1 else 0
+    poly_coefs = coefficients[coef_index]
+    y_pixels = np.arange(y_window_start, y_window_start + n_y_pixels)
+    y_polyval = np.polyval(poly_coefs[::-1], y_pixels)
+    dispersion_factor = 0.0223
+    return y_polyval * dispersion_factor
