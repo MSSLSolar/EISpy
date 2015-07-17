@@ -14,6 +14,7 @@ import sunpy
 import urllib
 from math import sqrt
 import astropy.constants as const
+from astropy import units as u
 
 __housekeeping_memo__ = {}
 __dispersion_long__ = 0.022332  # Constant value for long wavelength
@@ -282,32 +283,64 @@ def calc_slit_tilt(y_window_start, n_y_pixels, date, wavelength, slit):
 
 
 def calc_dispersion(wavelength):
+    """
+    Calculates dispersion at a given wavelength.
+
+    Parameters
+    ----------
+    wavelength: Astropy Quantity
+        The wavelength at which to calculate dispersion
+    """
     ccd_pix = wavelength_to_ccd_pixel(wavelength)
-    if wavelength > 230:  # Long lambda detector
+    if wavelength > 230 * u.Angstrom:  # Long lambda detector
         return __dispersion_long__ + __disp_sq_long__ * ccd_pix
     else:
         return __dispersion_short__ + __disp_sq_short__ * ccd_pix
 
 
 def wavelength_to_ccd_pixel(wavelength):
-    if wavelength > 230:
-        refwl = 199.9389
-        dln = __dispersion_long__
-        dsq = __disp_sq_long__
+    """
+    Converts a wavelength into a pixel position on the CCD
+
+    Parameters
+    ----------
+    wavelength: Astropy Quantity
+        The wavelength to convert
+    """
+    if wavelength > 230 * u.Angstrom:
+        refwvl = 199.9389
+        displin = __dispersion_long__
+        dispsq = __disp_sq_long__
     else:
-        refwl = 166.131
-        dln = __dispersion_short__
-        dsq = __disp_sq_short__
-    return (-dln + sqrt(dln**2 - 4 * dsq * (refwl - wavelength))) / 2 / dsq
+        refwvl = 166.131
+        displin = __dispersion_short__
+        dispsq = __disp_sq_short__
+    pixel = refwvl - (wavelength.to(u.Angstrom)).value
+    pixel *= 4 * dispsq
+    pixel = sqrt(displin**2 - pixel)
+    pixel -= displin
+    pixel /= 2
+    pixel /= dispsq
+    return pixel
 
 
 def calc_doppler_shift(times):
+    """
+    Calculates the offset to apply to the measurements due to line-of-sight
+    velocity. Searches for the data file in the default sunpy data directory
+    and downloads it to that location if it isn't found.
+
+    Parameters
+    ----------
+    times: array of datetime objects
+        Times at which to calculate Doppler shift
+    """
     fpp_dict = get_dict_from_file(times[0], prefix="fpp")
     ssw_times = [datetime_to_ssw_time(t) for t in times]
     # File has data as an array of 1-tuples for some reason...
     data = np.array([v[0] for v in fpp_dict['data']])
     fpp_times = np.array(fpp_dict['time'])
     data_at_times_wanted = interp1d(fpp_times, data)(ssw_times)
-    dispersion = calc_dispersion(195.12)  # FeXII line
+    dispersion = calc_dispersion(195.12 * u.Angstrom)  # FeXII line
     doppler_shift = data_at_times_wanted / const.c.value * 195.12 / dispersion
     return doppler_shift
