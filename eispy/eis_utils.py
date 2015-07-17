@@ -226,10 +226,10 @@ def datetime_to_ssw_time(time):
     return delta.total_seconds()
 
 
-def calc_slit_tilt(y_window_start, n_y_pixels, date, wavelength, slit):
+def calc_slit_tilt(y_window_start, n_y_pixels, date, band, slit):
     """
     Calculates the slit tilt correction, returning it as an array to be applied
-    to each pixel in the observation
+    to each pixel in the observation, in units of wavelength.
 
     Parameters
     ----------
@@ -240,7 +240,7 @@ def calc_slit_tilt(y_window_start, n_y_pixels, date, wavelength, slit):
     date:
         The date of the observation. This is used because the slit focus was
         adjusted on Aug 24, 2008.
-    wavelength: 'SHORT' or 'LONG'
+    band: 'SHORT' or 'LONG'
         The corrections depend on whether the observation was done using the
         short or long wavelength modes of the instrument.
     slit: 1 or 2
@@ -273,13 +273,13 @@ def calc_slit_tilt(y_window_start, n_y_pixels, date, wavelength, slit):
                              -7.6258247316829397e-07, 1.4085716859395248e-10]])
     coef_index = 0
     coef_index += 4 if date > slit_focus_adjustment else 0
-    coef_index += 2 if wavelength is 'LONG' else 0
+    coef_index += 2 if band is 'LONG' else 0
     coef_index += 1 if slit == 1 else 0
     poly_coefs = coefficients[coef_index]
     y_pixels = np.arange(y_window_start, y_window_start + n_y_pixels)
     y_polyval = np.polyval(poly_coefs[::-1], y_pixels)
     dispersion_factor = 0.0223
-    return y_polyval * dispersion_factor
+    return y_polyval * dispersion_factor * u.Angstrom
 
 
 def calc_dispersion(wavelength):
@@ -322,6 +322,18 @@ def wavelength_to_ccd_pixel(wavelength):
     pixel /= 2
     pixel /= dispsq
     return pixel
+
+
+def ccd_pixel_to_wavelength(pixel, band):
+    if band is 'LONG':
+        refwvl = 199.9389
+        displin = __dispersion_long__
+        dispsq = __disp_sq_long__
+    else:
+        refwvl = 166.131
+        displin = __dispersion_short__
+        dispsq = __disp_sq_short__
+    return refwvl + displin * pixel + dispsq * pixel**2
 
 
 def calc_doppler_shift(times):

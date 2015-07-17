@@ -9,6 +9,10 @@ from sunpy.spectra.spectral_cube import SpectralCube
 from sunpy.cube import cube_utils as cu
 from sunpy.util.util import savitzky_golay
 import numpy as np
+from eispy import eis_utils as eu
+import datetime as dt
+from astropy import units as u
+import time
 
 __all__ = ['EISSpectralCube']
 
@@ -19,7 +23,11 @@ class EISSpectralCube(SpectralCube):
     handling and correcting EIS's characteristics.
     """
 
-    def orbital_correction(self, line_guess=None, yrange=None, **kwargs):
+    def __init__(self, spectra, wcs, meta, errors=None):
+        SpectralCube.__init__(self, spectra, wcs, meta)
+        self.errors = errors
+
+    def orbital_correction_old(self, line_guess=None, yrange=None, **kwargs):
         """
         Calculates the corrections for orbital and slit tilt deviation.
         Calculates the average over a given y-range which ideally should be
@@ -70,6 +78,28 @@ class EISSpectralCube(SpectralCube):
         window_size += 1 if window_size % 2 == 0 else 0
         smooth_averages = savitzky_golay(corrections, window_size, 3)
         return smooth_averages
+
+    def orbital_corrections_new():
+        slit = 2 if self.meta['SLIT_IND'] == 2 else 0  # 1" slit has index 0
+        y_window_start = self.meta['TWS']
+        n_y_pixels = self.meta['YW']
+        sit_and_stare = self.meta['FMIR_SS'] == 0
+        n_exposures = self.meta['NEXP']
+        obs_start_ts = time.strptime(self.meta['DATE_OBS'][:19],
+                                     "%Y-%m-%dT%H:%M:%S")
+        obs_end_ts = time.strptime(self.meta['DATE_END'][:19],
+                                     "%Y-%m-%dT%H:%M:%S")
+        obs_start = dt.datetime.fromtimestamp(time.mktime(obs_start_ts))
+        obs_end = dt.datetime.fromtimestamp(time.mktime(obs_end_ts))
+        tdelta = (obs_end - obs_start) / n_exposures
+        times = [obs_start + delt for delt in tdelta * np.arange(n_exposures)]
+        wavelength = 'LONG' if self.meta['TWAVE'] > 230 else 'SHORT'
+        slit_tilt_corr = eu.calc_slit_tilt(y_window_start, n_y_pixels,
+                                           times[0], wavelength, slit)
+        thermal_corr = eu.calc_hk_thermal_corrections(times, slit == 2)
+        doppler_corr = eu.calc_doppler_shift(times)
+        time_corr = (thermal_corr + doppler_corr) - eu.wavelength_to_ccd_pixel(195.12 * u.A)
+        
 
     def apply_corrections(self, corrections):
         """
