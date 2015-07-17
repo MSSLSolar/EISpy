@@ -68,7 +68,7 @@ class EISSpectralCube(SpectralCube):
         centers = self._param_array(1, line_guess, **kwargs)
         # Now get a 1-D array of the average intensities along the y-axis.
         # Ideally the range should be chosen so that this is quiet sun.
-        averages = [np.average(arr[ymin:ymax]) for arr in centers]
+        averages = [np.average(arr[yrange[0]:yrange[1]]) for arr in centers]
         # Calculate the offset from the centroid of the emission line over the
         # given data range.
         corrections = line_guess[1] - averages
@@ -76,30 +76,57 @@ class EISSpectralCube(SpectralCube):
         # the less important frequencies.
         window_size = int(corrections.shape[0] / 3)
         window_size += 1 if window_size % 2 == 0 else 0
-        smooth_averages = savitzky_golay(corrections, window_size, 3)
-        return smooth_averages
+        corrections = savitzky_golay(corrections, window_size, 3)
+        # Add the slit tilt component to all
+        slit_tilt_corr = self._get_slit_tilt()
+        corr = [slit_tilt_corr + a for a in corrections]
+        return np.array(corr)
 
-    def orbital_corrections_new():
+    def orbital_corrections_new(self):
+        """
+        Calculates the orbital corrections using the new housekeeping method,
+        downloading the data if the fils are not found in the sunpy data folder
+        """
         slit = 2 if self.meta['SLIT_IND'] == 2 else 0  # 1" slit has index 0
+        # sit_and_stare = self.meta['FMIR_SS'] == 0
+        slit_tilt_corr = self._get_slit_tilt()
+        times = self.get_exposure_times()
+        thermal_corr = eu.calc_hk_thermal_corrections(times, slit == 2)
+        doppler_corr = eu.calc_doppler_shift(times)
+        time_corr = thermal_corr + doppler_corr
+        time_corr -= eu.wavelength_to_ccd_pixel(195.12 * u.Angstrom)
+        corrections = [slit_tilt_corr + t for t in time_corr]
+        return np.array(corrections)
+
+    def _get_slit_tilt(self):
+        """
+        Calculates the corrections necessary due to slit tilt.
+        """
+        slit = 2 if self.meta['SLIT_IND'] == 2 else 0  # 1" slit has index 0
+        obs_start_ts = time.strptime(self.meta['DATE_OBS'][:19],
+                                     "%Y-%m-%dT%H:%M:%S")
+        obs_start = dt.datetime.fromtimestamp(time.mktime(obs_start_ts))
         y_window_start = self.meta['TWS']
         n_y_pixels = self.meta['YW']
-        sit_and_stare = self.meta['FMIR_SS'] == 0
+        wavelength = 'LONG' if self.meta['TWAVE'] > 230 else 'SHORT'
+        slit_tilt_corr = eu.calc_slit_tilt(y_window_start, n_y_pixels,
+                                           obs_start, wavelength, slit)
+        return slit_tilt_corr
+
+    def get_exposure_times(self):
+        """
+        Returns the exposure times for this SpectralCube
+        """
         n_exposures = self.meta['NEXP']
         obs_start_ts = time.strptime(self.meta['DATE_OBS'][:19],
                                      "%Y-%m-%dT%H:%M:%S")
         obs_end_ts = time.strptime(self.meta['DATE_END'][:19],
-                                     "%Y-%m-%dT%H:%M:%S")
+                                   "%Y-%m-%dT%H:%M:%S")
         obs_start = dt.datetime.fromtimestamp(time.mktime(obs_start_ts))
         obs_end = dt.datetime.fromtimestamp(time.mktime(obs_end_ts))
         tdelta = (obs_end - obs_start) / n_exposures
         times = [obs_start + delt for delt in tdelta * np.arange(n_exposures)]
-        wavelength = 'LONG' if self.meta['TWAVE'] > 230 else 'SHORT'
-        slit_tilt_corr = eu.calc_slit_tilt(y_window_start, n_y_pixels,
-                                           times[0], wavelength, slit)
-        thermal_corr = eu.calc_hk_thermal_corrections(times, slit == 2)
-        doppler_corr = eu.calc_doppler_shift(times)
-        time_corr = (thermal_corr + doppler_corr) - eu.wavelength_to_ccd_pixel(195.12 * u.A)
-        
+        return times
 
     def apply_corrections(self, corrections):
         """
