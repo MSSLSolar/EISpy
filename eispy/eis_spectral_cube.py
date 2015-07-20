@@ -7,8 +7,8 @@ Class for the EIS spectral cube.
 
 from sunpycube.spectra.spectral_cube import SpectralCube
 from sunpycube.cube import cube_utils as cu
-from sunpy.util.util import savitzky_golay
 import numpy as np
+from scipy.signal import savgol_filter
 from eispy import eis_utils as eu
 import datetime as dt
 from astropy import units as u
@@ -76,7 +76,7 @@ class EISSpectralCube(SpectralCube):
         # the less important frequencies.
         window_size = int(corrections.shape[0] / 3)
         window_size += 1 if window_size % 2 == 0 else 0
-        corrections = savitzky_golay(corrections, window_size, 3)
+        corrections = savgol_filter(corrections, window_size, 3)
         # Add the slit tilt component to all
         slit_tilt_corr = self._get_slit_tilt()
         corr = [slit_tilt_corr + a for a in corrections]
@@ -95,6 +95,8 @@ class EISSpectralCube(SpectralCube):
         doppler_corr = eu.calc_doppler_shift(times)
         time_corr = thermal_corr + doppler_corr
         time_corr -= eu.wavelength_to_ccd_pixel(195.12 * u.Angstrom)
+        time_corr *= 0.022317
+        time_corr *= u.Angstrom
         corrections = [slit_tilt_corr + t for t in time_corr]
         return np.array(corrections)
 
@@ -106,7 +108,7 @@ class EISSpectralCube(SpectralCube):
         obs_start_ts = time.strptime(self.meta['DATE_OBS'][:19],
                                      "%Y-%m-%dT%H:%M:%S")
         obs_start = dt.datetime.fromtimestamp(time.mktime(obs_start_ts))
-        y_window_start = self.meta['TWS']
+        y_window_start = self.meta['YWS']
         n_y_pixels = self.meta['YW']
         wavelength = 'LONG' if self.meta['TWAVE'] > 230 else 'SHORT'
         slit_tilt_corr = eu.calc_slit_tilt(y_window_start, n_y_pixels,
@@ -117,7 +119,7 @@ class EISSpectralCube(SpectralCube):
         """
         Returns the exposure times for this SpectralCube
         """
-        n_exposures = self.meta['NEXP']
+        n_exposures = self.meta['TDETXW']
         obs_start_ts = time.strptime(self.meta['DATE_OBS'][:19],
                                      "%Y-%m-%dT%H:%M:%S")
         obs_end_ts = time.strptime(self.meta['DATE_END'][:19],
@@ -137,6 +139,6 @@ class EISSpectralCube(SpectralCube):
         corrections: 2D array
             The offsets to be applied.
         """
-        for arr, corr in zip(self.spectra.T, corrections):
-            for spec in arr:
-                spec.shift_axis(corr)
+        for x in range(self.spectra.shape[0]):
+            for y in range(self.spectra.shape[1]):
+                self.spectra[x, y].shift_axis(corrections[x, y])

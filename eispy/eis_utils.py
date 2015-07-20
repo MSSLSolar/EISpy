@@ -41,16 +41,17 @@ def get_dict_from_file(date, prefix="eis3"):
         file prefix (eis3 for thermal correction, fpp1 for doppler shift)
     """
     key = date.year * 100 + date.month
-    download_dir = sunpy.config.get("downloads", "download_dir")
-    download_dir += "/EIS_corrections/" + prefix + "_" + str(key) + ".sav"
+    key = prefix + "_" + str(key)
+    # TODO: Do this properly, using os path join.
+    download_dir = sunpy.util.config._get_home()
+    download_dir += "/EISpy/eispy/data/" + key + ".sav"
     if key in __housekeeping_memo__:
         file_dict = __housekeeping_memo__[key]
     else:
         try:
             file_dict = readsav(download_dir, python_dict=True)
         except IOError:
-            url = "http://sdc.uio.no/eis_wave_corr_hk_data/eis3_" + \
-                   str(key) + ".sav"
+            url = "http://sdc.uio.no/eis_wave_corr_hk_data/" + key + ".sav"
             urllib.urlretrieve(url, filename=download_dir)
             file_dict = readsav(download_dir, python_dict=True)
             warnings.warn("File was not found, so it was downloaded and " +
@@ -198,9 +199,9 @@ def calc_hk_thermal_corrections(times, slit2=False):
     """
     # TODO: include good and bad data samples
     measurement_times = get_dict_from_file(times[0])['time']
-    times = [datetime_to_ssw_time(t) for t in times]
-    min_wanted_index = np.argmin(measurement_times - np.min(times))
-    max_wanted_index = np.argmax(measurement_times - np.max(times))
+    sswtimes = [datetime_to_ssw_time(t) for t in times]
+    min_wanted_index = np.argmin(measurement_times - np.min(sswtimes))
+    max_wanted_index = np.argmax(measurement_times - np.max(sswtimes))
     pixels = np.zeros(max_wanted_index - min_wanted_index + 1)
     for i in range(min_wanted_index, max_wanted_index):
         temperatures = get_hk_temperatures(times[0], _pos=i)
@@ -208,7 +209,7 @@ def calc_hk_thermal_corrections(times, slit2=False):
                                                      measurement_times[i],
                                                      slit2)
     shifted_corrections_fun = interp1d(measurement_times, pixels)
-    return shifted_corrections_fun(times)
+    return shifted_corrections_fun(sswtimes)
 
 
 def datetime_to_ssw_time(time):
@@ -246,7 +247,7 @@ def calc_slit_tilt(y_window_start, n_y_pixels, date, band, slit):
     slit: 1 or 2
         Which of the two slits was used in the observation.
     """
-    slit_focus_adjustment = dt.date(2008, 8, 24)
+    slit_focus_adjustment = dt.datetime(2008, 8, 24)
     coefficients = np.array(  # Before adjustment, short wl, 2" slit
                            [[-2.7607165427059641e+00, 6.4390116579832180e-03,
                              -2.7122949886142483e-06, 1.3035120912928136e-09],
@@ -347,12 +348,13 @@ def calc_doppler_shift(times):
     times: array of datetime objects
         Times at which to calculate Doppler shift
     """
-    fpp_dict = get_dict_from_file(times[0], prefix="fpp")
+    fpp_dict = get_dict_from_file(times[0], prefix="fpp1")
     ssw_times = [datetime_to_ssw_time(t) for t in times]
     # File has data as an array of 1-tuples for some reason...
     data = np.array([v[0] for v in fpp_dict['data']])
     fpp_times = np.array(fpp_dict['time'])
-    data_at_times_wanted = interp1d(fpp_times, data)(ssw_times)
+    data_at_times_wanted_fun = interp1d(fpp_times, data)
+    data_at_times_wanted = data_at_times_wanted_fun(ssw_times)
     dispersion = calc_dispersion(195.12 * u.Angstrom)  # FeXII line
     doppler_shift = data_at_times_wanted / const.c.value * 195.12 / dispersion
     return doppler_shift
