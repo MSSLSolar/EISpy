@@ -5,8 +5,8 @@
 Class for the EIS spectral cube.
 """
 
-from sunpy.spectra.spectral_cube import SpectralCube
-from sunpy.cube import cube_utils as cu
+from sunpycube.spectra.spectral_cube import SpectralCube
+from sunpycube.cube import cube_utils as cu
 from sunpy.util.util import savitzky_golay
 import numpy as np
 from eispy import eis_utils as eu

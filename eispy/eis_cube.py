@@ -6,10 +6,15 @@ from __future__ import absolute_import
 
 from astropy.io import fits
 from sunpy.wcs.wcs import WCS
-from sunpy.cube import Cube
+from sunpycube.cube.datacube import Cube
+from sunpycube.cube import cube_utils as cu
+from sunpy.wcs import wcs_util as wu
+import numpy as np
+from sunpycube.spectra.spectrum import Spectrum
+from eispy.eis_spectral_cube import EISSpectralCube
 import re
 
-__all__ = ['EISSpectralCube']
+__all__ = ['EISCube']
 
 
 def _clean(header):
@@ -28,8 +33,8 @@ def _clean(header):
     return header
 
 
-class EISSpectralCube(Cube):
-    '''EIS Spectral Cube subclass.
+class EISCube(Cube):
+    '''EIS Cube subclass.
 
     References
     ----------
@@ -76,8 +81,8 @@ class EISSpectralCube(Cube):
         w = WCS(header=header, naxis=3)
         wavelengths = [c.name for c in hdulist[1].columns if c.dim is not None]
         data = [hdulist[1].data[wav] for wav in wavelengths]
-        cubes = [EISSpectralCube(data[i], w, i+1, dataHeader=hdulist[1].header,
-                                 primaryHeader=hdulist[0].header)
+        cubes = [EISCube(data[i], w, i+1, dataHeader=hdulist[1].header,
+                         primaryHeader=hdulist[0].header)
                  for i in range(len(data))]
         return dict(zip(wavelengths, cubes))
 
@@ -85,6 +90,27 @@ class EISSpectralCube(Cube):
     def is_datasource_for(cls, data, header, **kwargs):
         # TODO: This will have to be changed once other sources are added.
         return True
+
+    def convert_to_spectral_cube(self):
+        """
+        Converts this cube into an EISSpectralCube. It will only work if the
+        cube has exactly three dimensions and one of those is a spectral axis.
+        """
+        if self.data.ndim == 4:
+            raise cu.CubeError(4, "Too many dimensions: Can only convert a " +
+                               "3D cube. Slice the cube before converting")
+        if 'WAVE' not in self.axes_wcs.wcs.ctype:
+            raise cu.CubeError(2, 'Spectral axis needed to create a spectrum')
+        axis = 0 if self.axes_wcs.wcs.ctype[-1] == 'WAVE' else 1
+        coordaxes = [1, 2] if axis == 0 else [0, 2]  # Non-spectral axes
+        newwcs = wu.reindex_wcs(self.axes_wcs, np.array(coordaxes))
+        time_or_x_size = self.data.shape[coordaxes[0]]
+        y_size = self.data.shape[coordaxes[1]]
+        spectra = np.empty((time_or_x_size, y_size), dtype=Spectrum)
+        for i in range(time_or_x_size):
+            for j in range(y_size):
+                spectra[i][j] = self.slice_to_spectrum(i, j)
+        return EISSpectralCube(spectra, newwcs, self.meta)
 
 
 def _is_in_window(key, window):

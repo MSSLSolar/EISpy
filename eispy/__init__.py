@@ -14,8 +14,10 @@ try:
     from .version import version as __version__
 except ImportError:
     __version__ = ''
-    
+
 try:
     from .version import githash as __githash__
 except ImportError:
     __githash__ = ''
+
+from eispy import eis_cube, eis_spectral_cube, eis_utils
