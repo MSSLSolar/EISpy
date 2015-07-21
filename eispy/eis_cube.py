@@ -152,5 +152,7 @@ def _dictionarize_header(data_header, primary_header, window):
             newkey = re.sub(r'\d+$', '', k)
             dh[newkey] = data_header[k]
 
-    ph.update(dh)
-    return ph
+    dh.update(ph)
+    dh['CRPIX3'] = 1
+    dh['CRVAL3'] = dh['TWAVE'] * 1e-10
+    return dh

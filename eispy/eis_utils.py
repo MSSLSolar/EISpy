@@ -42,12 +42,12 @@ def get_dict_from_file(date, prefix="eis3"):
     """
     key = date.year * 100 + date.month
     key = prefix + "_" + str(key)
-    # TODO: Do this properly, using os path join.
-    download_dir = sunpy.util.config._get_home()
-    download_dir += "/EISpy/eispy/data/" + key + ".sav"
     if key in __housekeeping_memo__:
         file_dict = __housekeeping_memo__[key]
     else:
+        # TODO: Do this properly, using os path join.
+        download_dir = sunpy.util.config._get_home()
+        download_dir += "/EISpy/eispy/data/" + key + ".sav"
         try:
             file_dict = readsav(download_dir, python_dict=True)
         except IOError:
