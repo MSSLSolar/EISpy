@@ -26,10 +26,10 @@ def _clean(header):
     header : astropy.io.fits.Header
         The header to be cleaned.
     """
-    header['ctype1'] = 'HPLN-TAN'  # Helioprojective longitude, TAN projection
-    header['ctype2'] = 'HPLT-TAN'  # Helioprojective latitude, TAN projection
-    header['ctype3'] = 'WAVE   '  # Wavelength axis, default (TAB) projection
-    header['naxis'] = 3
+    header['CTYPE1'] = 'HPLN-TAN'  # Helioprojective longitude, TAN projection
+    header['CTYPE2'] = 'HPLT-TAN'  # Helioprojective latitude, TAN projection
+    header['CTYPE3'] = 'WAVE   '  # Wavelength axis, default (TAB) projection
+    header['NAXIS'] = 3
     return header
 
 
@@ -41,8 +41,7 @@ class EISCube(Cube):
     For an overview of the mission
     http://solarb.mssl.ucl.ac.uk/SolarB/
     '''
-    def __init__(self,
-                 data, wcs, window=1, dataHeader=None, primaryHeader=None):
+    def __init__(self, data, wcs, header=None):
         '''
         Constructor function.
 
@@ -52,15 +51,12 @@ class EISCube(Cube):
             The cube containing the data
         wcs: sunpy.wcs.wcs.WCS object
             The world coordinate system for the array.
-        window: int
-            The window this cube belongs to in the file. Used to fetch the
-            correct metadata from the header
         dataHeader: astropy.io.fits.Header object
             The header for the BINTableHDU section of the FITS file
         primaryHeader: astropy.io.fits.Header object
             The main header for the whole file.
         '''
-        header = _dictionarize_header(dataHeader, primaryHeader, window)
+        wcs = WCS(header=header, naxis=3)
         Cube.__init__(self, data.T, wcs, meta=header)
         # Data is transposed here because EIS orders (y, lambda) by x or time,
         # not (y, x) by lambda.
@@ -78,12 +74,15 @@ class EISCube(Cube):
         hdulist = fits.open(name=filename, **kwargs)
         header = _clean(hdulist[0].header)
         # TODO: Make sure each cube has a correct wcs.
-        w = WCS(header=header, naxis=3)
         wavelengths = [c.name for c in hdulist[1].columns if c.dim is not None]
         data = [hdulist[1].data[wav] for wav in wavelengths]
-        cubes = [EISCube(data[i], w, i+1, dataHeader=hdulist[1].header,
-                         primaryHeader=hdulist[0].header)
-                 for i in range(len(data))]
+        cubes = []
+        for i in range(len(data)):
+            window = i + 1
+            header = _dictionarize_header(hdulist[1].header, hdulist[0].header,
+                                          window)
+            wcs = WCS(header=header, naxis=3)
+            cubes += [EISCube(data[i], wcs, header)]
         return dict(zip(wavelengths, cubes))
 
     @classmethod
@@ -154,5 +153,6 @@ def _dictionarize_header(data_header, primary_header, window):
 
     dh.update(ph)
     dh['CRPIX3'] = 1
-    dh['CRVAL3'] = dh['TWAVE'] * 1e-10
+    dh['CRVAL3'] = dh['TWAVE']
+    dh.pop('COMMENT', '')
     return dh
