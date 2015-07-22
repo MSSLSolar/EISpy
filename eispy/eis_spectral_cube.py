@@ -63,7 +63,7 @@ class EISSpectralCube(SpectralCube):
         # First, get the centers of the line we're correcting for, throughout
         # the whole cube. This is a 2D array. Force a recalculation and clip
         # the fitting window as well.
-        x_range = kwargs.get('x_range', (194.9, 195.3))
+        x_range = kwargs.get('x_range', (194.5, 195.6))
         kwargs.update({'recalc': True, 'x_range': x_range})
         centers = self._param_array(1, line_guess, **kwargs)
         # Now get a 1-D array of the average intensities along the y-axis.
@@ -71,12 +71,13 @@ class EISSpectralCube(SpectralCube):
         averages = [np.average(arr[yrange[0]:yrange[1]]) for arr in centers]
         # Calculate the offset from the centroid of the emission line over the
         # given data range.
-        corrections = line_guess[1] - averages
+        corrections = line_guess[1] - np.array(averages)
         # Remove noise by appplying a smoothing filter and getting rid of
         # the less important frequencies.
         window_size = int(corrections.shape[0] / 3)
         window_size += 1 if window_size % 2 == 0 else 0
         corrections = savgol_filter(corrections, window_size, 3)
+        corrections *= u.Angstrom
         # Add the slit tilt component to all
         slit_tilt_corr = self._get_slit_tilt()
         corr = [slit_tilt_corr + a for a in corrections]
@@ -119,7 +120,7 @@ class EISSpectralCube(SpectralCube):
         """
         Returns the exposure times for this SpectralCube
         """
-        n_exposures = self.meta['TDETXW']
+        n_exposures = self.meta['NEXP']
         obs_start_ts = time.strptime(self.meta['DATE_OBS'][:19],
                                      "%Y-%m-%dT%H:%M:%S")
         obs_end_ts = time.strptime(self.meta['DATE_END'][:19],

@@ -57,7 +57,7 @@ class EISCube(Cube):
             The main header for the whole file.
         '''
         wcs = WCS(header=header, naxis=3)
-        Cube.__init__(self, data.T, wcs, meta=header)
+        Cube.__init__(self, data, wcs, meta=header)
         # Data is transposed here because EIS orders (y, lambda) by x or time,
         # not (y, x) by lambda.
 
@@ -103,12 +103,12 @@ class EISCube(Cube):
         axis = 0 if self.axes_wcs.wcs.ctype[-1] == 'WAVE' else 1
         coordaxes = [1, 2] if axis == 0 else [0, 2]  # Non-spectral axes
         newwcs = wu.reindex_wcs(self.axes_wcs, np.array(coordaxes))
-        time_or_x_size = self.data.shape[coordaxes[0]]
-        y_size = self.data.shape[coordaxes[1]]
+        time_or_x_size = self.data.shape[coordaxes[1]]
+        y_size = self.data.shape[coordaxes[0]]
         spectra = np.empty((time_or_x_size, y_size), dtype=Spectrum)
         for i in range(time_or_x_size):
             for j in range(y_size):
-                spectra[i][j] = self.slice_to_spectrum(i, j)
+                spectra[i][j] = self.slice_to_spectrum(j, i)
         return EISSpectralCube(spectra, newwcs, self.meta)
 
 

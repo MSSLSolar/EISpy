@@ -274,7 +274,7 @@ def calc_slit_tilt(y_window_start, n_y_pixels, date, band, slit):
                              -7.6258247316829397e-07, 1.4085716859395248e-10]])
     coef_index = 0
     coef_index += 4 if date > slit_focus_adjustment else 0
-    coef_index += 2 if band is 'LONG' else 0
+    coef_index += 2 if band == 'LONG' else 0
     coef_index += 1 if slit == 1 else 0
     poly_coefs = coefficients[coef_index]
     y_pixels = np.arange(y_window_start, y_window_start + n_y_pixels)
@@ -326,7 +326,7 @@ def wavelength_to_ccd_pixel(wavelength):
 
 
 def ccd_pixel_to_wavelength(pixel, band):
-    if band is 'LONG':
+    if band == 'LONG':
         refwvl = 199.9389
         displin = __dispersion_long__
         dispsq = __disp_sq_long__
