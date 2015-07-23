@@ -81,9 +81,9 @@ class EISSpectralCube(SpectralCube):
         # Add the slit tilt component to all
         slit_tilt_corr = self._get_slit_tilt()
         corr = [slit_tilt_corr + a for a in corrections]
-        return np.array(corr)
+        return np.array(corr) * u.Angstrom
 
-    def orbital_corrections_new(self):
+    def orbital_correction_new(self):
         """
         Calculates the orbital corrections using the new housekeeping method,
         downloading the data if the fils are not found in the sunpy data folder
