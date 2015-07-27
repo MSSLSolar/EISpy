@@ -15,6 +15,7 @@ import datetime as dt
 import locale
 import urllib
 from bs4 import BeautifulSoup
+from astroscrappy import detect_cosmics
 
 __missing__ = -100
 __darts__ = "http://darts.jaxa.jp/pub/ssw/solarb/eis/data/cal/"
@@ -125,6 +126,26 @@ def _calibrate_pixels(meta, *data_and_errors):
         for x_slice in err:
             x_slice[locations.T] = __missing__
         window += 1
+
+
+def _remove_cosmic_rays(*data_and_errors, **kwargs):
+    """
+    Removes and corrects for cosmic ray damage in the measurements. This method
+    uses astroscrappy, so refer to that documentation for fine-tuning the
+    keyword arguments.
+
+    Parameters
+    ----------
+    data_and_errors: one or more 2-tuples of ndarrays
+        tuples of the form (data, error) to be corrected
+    kwargs: dict-like, optional
+        Extra arguments to be passed on to astroscrappy.
+    """
+    for data, err in data_and_errors:
+        slices = [detect_cosmics(ccd_slice, **kwargs) for ccd_slice in data]
+        data = np.array([ccd_slice[1] for ccd_slice in slices])
+        mask = np.array([ccd_slice[0] for ccd_slice in slices])
+        err[mask] = True
 
 
 # /===========================================================================\
@@ -313,4 +334,5 @@ def _get_pixel_map(date, pix_type, detector, y_window, x_window):
     glued_array[512:1024, 1024:2048] = arrays.get('bottomright', zero_arr)
     glued_array[512:1024, 0:1024] = arrays.get('bottomleft', zero_arr)
     glued_array[0:512, 1024:2048] = arrays.get('topright', zero_arr)
-    return glued_array[x_start:x_window[1], y_window_start:y_window[1]]
+    return glued_array[x_start:(x_window[1] % 2048),
+                       y_window_start:y_window[1]]
