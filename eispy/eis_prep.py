@@ -15,8 +15,10 @@ import datetime as dt
 import locale
 import urllib
 from bs4 import BeautifulSoup
+
 __missing__ = -100
 __darts__ = "http://darts.jaxa.jp/pub/ssw/solarb/eis/data/cal/"
+__pix_memo__ = {}
 
 
 # /===========================================================================\
@@ -194,10 +196,11 @@ def _download_calibration_data(date, pix_type, detector, top_bot, left_right):
     tb_tuple = ('top', 'bottom') if top_bot == 'both' else (top_bot,)
     lr_tuple = ('left', 'right') if left_right == 'both' else (left_right,)
     retfiles = {}
-    for tb in tb_tuple:
-        for lr in lr_tuple:
-            key = tb + lr
-            arr = _try_download_nearest_cal(date, pix_type, detector, tb, lr)
+    for vert in tb_tuple:
+        for horiz in lr_tuple:
+            key = vert + horiz
+            arr = _try_download_nearest_cal(date, pix_type, detector, vert,
+                                            horiz)
             retfiles.update({key: arr})
     return retfiles
 
@@ -217,6 +220,10 @@ def _try_download_nearest_cal(date, pix_type, detector, top_bot, left_right):
     Tries to download the requested calibration data, looking for up to one
     month before and after to do so.
     """
+    key = _construct_hot_warm_pix_url(date, pix_type, detector, top_bot,
+                                      left_right)
+    if key in __pix_memo__:
+        return __pix_memo__[key]
     dates = _get_cal_dates(pix_type)
     dates.sort(key=lambda d: d - date if d > date else date - d)
     # dates is now a sorted list of the dates closest to the specified date
@@ -227,7 +234,9 @@ def _try_download_nearest_cal(date, pix_type, detector, top_bot, left_right):
         http_response.close()
         if http_response.code == 200:  # HTTP OK
             http_down = urllib.urlretrieve(url)
-            return readsav(http_down[0]).ccd_data
+            arr = readsav(http_down[0]).ccd_data
+            __pix_memo__[key] = arr
+            return arr
 
 
 def _get_cal_dates(pix_type):
