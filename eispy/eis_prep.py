@@ -14,10 +14,14 @@ import numpy as np
 import datetime as dt
 import locale
 import urllib
+from bs4 import BeautifulSoup
 __missing__ = -100
 __darts__ = "http://darts.jaxa.jp/pub/ssw/solarb/eis/data/cal/"
 
 
+# /===========================================================================\
+# |                          Methods for main steps                           |
+# \===========================================================================/
 def _read_fits(filename, **kwargs):
     """
     Reads a FITS file and returns two things: a dictionary of wavelengths to a
@@ -90,6 +94,42 @@ def _remove_dark_current(meta, *data_and_errors, **kwargs):
         window += 1
 
 
+def _calibrate_pixels(meta, *data_and_errors):
+    """
+    Fetches and marks as missing hot, warm and dusty pixels present in the
+    observation. If there is no data available for the exact date of a
+    particular observation, the closest available one is used.
+
+    Parameters
+    ----------
+    meta: dict
+        observation metadata
+    data_and_errors: one or more 2-tuples of ndarrays
+        tuples of the form (data, error) to be corrected
+    """
+    window = 1
+    for _, err in data_and_errors:
+        date = dt.datetime.strptime(meta['DATE_OBS'][:10], "%Y-%m-%d")
+        y_window = (meta['YWS'], meta['YWS'] + meta['YW'])
+        x_window = (meta['TDETX' + str(window)], meta['TDETX' + str(window)] +
+                                                 meta['TDETXW' + str(window)])
+        detector = meta['TWBND' + str(window)].lower()
+        hots = _get_pixel_map(date, 'hp', detector, y_window, x_window)
+        warms = _get_pixel_map(date, 'wp', detector, y_window, x_window)
+        dusties = _get_dusty_array(y_window, x_window)
+        locations = hots == 1
+        locations[warms == 1] = True
+        locations[dusties == 1] = True
+        for x_slice in err:
+            x_slice[locations.T] = __missing__
+        window += 1
+
+
+# /===========================================================================\
+# |                              Utility methods                              |
+# \===========================================================================/
+
+# ==========================    Dark current utils    =========================
 def _remove_dark_current_full_ccd(data, meta, window):
     """
     Remove the dark current and CCD pedestal from a data array that encompasses
@@ -131,6 +171,7 @@ def _remove_dark_current_part_ccd(data):
     data -= low_value
 
 
+# =======================    Pixel calibration utils    =======================
 def _download_calibration_data(date, pix_type, detector, top_bot, left_right):
     """
     Downloads the requested calibration data from the DARTS repository. If the
@@ -161,28 +202,46 @@ def _download_calibration_data(date, pix_type, detector, top_bot, left_right):
     return retfiles
 
 
+def _get_dusty_array(y_window, x_window):
+    """
+    Returns the sliced array of dusty pixels
+    """
+    url = __darts__ + 'dp/dusty_pixels.sav'
+    http_down = urllib.urlretrieve(url)
+    dusties = readsav(http_down[0]).dp_data
+    return dusties[x_window[0]: x_window[1], y_window[0]:y_window[1]]
+
+
 def _try_download_nearest_cal(date, pix_type, detector, top_bot, left_right):
     """
     Tries to download the requested calibration data, looking for up to one
     month before and after to do so.
     """
-    day = dt.timedelta(1)
-    for i in range(30):  # Search one month before and after
-        datebefore = date - (day * i)
-        url = _construct_hot_warm_pix_url(datebefore, pix_type, detector,
+    dates = _get_cal_dates(pix_type)
+    dates.sort(key=lambda d: d - date if d > date else date - d)
+    # dates is now a sorted list of the dates closest to the specified date
+    for cal_date in dates:
+        url = _construct_hot_warm_pix_url(cal_date, pix_type, detector,
                                           top_bot, left_right)
         http_response = urllib.urlopen(url)
         http_response.close()
-        if http_response.code != 200:  # HTTP 200 is "OK"
-            dateafter = date + (day * i)
-            url = _construct_hot_warm_pix_url(dateafter, pix_type, detector,
-                                              top_bot, left_right)
-            http_response = urllib.urlopen(url)
-            http_response.close()
-        if http_response.code == 200:
+        if http_response.code == 200:  # HTTP OK
             http_down = urllib.urlretrieve(url)
             return readsav(http_down[0]).ccd_data
-    raise UserWarning("No data found within one month of the specified date")
+
+
+def _get_cal_dates(pix_type):
+    """
+    Retrieves the list of available dates for a given pixel type.
+    """
+    url = __darts__ + pix_type + '/'
+    http_request = urllib.urlopen(url)
+    soup = BeautifulSoup(http_request.read())
+    http_request.close()
+    links = soup.find_all('a')
+    date_str = [link.get('href') for link in links]
+    dates = [dt.datetime.strptime(date, '%Y-%m-%d/') for date in date_str[5:]]
+    return dates  # This isn't a numpy array so we can sort by keys.
 
 
 def _construct_hot_warm_pix_url(date, pix_type, detector, top_bot, left_right):
@@ -220,8 +279,8 @@ def _calculate_detectors(date, y_window_start, n_y_pixels, x_start, x_width):
                   'bottom' if y_window_start + n_y_pixels <= 512 else \
                   'both'
     # XXX: Warning: there may be an off-by-one error here!
-    left_right = 'right' if x_start % 2048 >= 1024 else \
-                 'left' if (x_start + x_width) % 2048 < 1024 else \
+    left_right = 'right' if x_start >= 1024 else \
+                 'left' if (x_start + x_width) < 1024 else \
                  'both'
     return top_bot, left_right
 
@@ -232,17 +291,17 @@ def _get_pixel_map(date, pix_type, detector, y_window, x_window):
     at the given date.
     """
     y_window_start = y_window[0]
-    x_start = x_window[0]
+    x_start = x_window[0] % 2048
     n_y_pixels = y_window[1] - y_window[0]
-    x_width = x_window[1] - y_window[0]
+    x_width = x_window[1] - x_window[0]
     detector_areas = _calculate_detectors(date, y_window_start, n_y_pixels,
                                           x_start, x_width)
     arrays = _download_calibration_data(date, pix_type, detector,
                                         detector_areas[0], detector_areas[1])
     glued_array = np.zeros((1024, 2048))
     zero_arr = np.zeros((512, 1024))
-    glued_array[0:1024, 0:512] = arrays.get('topleft', zero_arr)
-    glued_array[1024:2048, 512:1024] = arrays.get('bottomright', zero_arr)
-    glued_array[0:1024, 512:1024] = arrays.get('bottomleft', zero_arr)
-    glued_array[1024:2048, 0:512] = arrays.get('topright', zero_arr)
+    glued_array[0:512, 0:1024] = arrays.get('topleft', zero_arr)
+    glued_array[512:1024, 1024:2048] = arrays.get('bottomright', zero_arr)
+    glued_array[512:1024, 0:1024] = arrays.get('bottomleft', zero_arr)
+    glued_array[0:512, 1024:2048] = arrays.get('topright', zero_arr)
     return glued_array[x_start:x_window[1], y_window_start:y_window[1]]
