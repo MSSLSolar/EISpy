@@ -79,7 +79,7 @@ def get_hk_temperatures(time, _pos=None):
     file_dict = get_dict_from_file(time)
     if _pos is None:
         timestamp = datetime_to_ssw_time(time)
-        position = np.argmin(file_dict['time'] - timestamp)
+        position = np.argmin(np.abs(file_dict['time'] - timestamp))
     else:
         position = _pos
     pos_before = position - 5 if position > 5 else 0
@@ -121,7 +121,7 @@ def correct_pixel(temps, time=None, slit2=False):
     return np.sum(correction_arr * (temps - 15.0) / 10.0) + pixel_ref
 
 
-def _get_corr_parameters(time):
+def _get_corr_parameters(sswtime):
     """
     Returns the correct correction parameters for the given time. They are
     different because of three adjustments that have been made to the device.
@@ -129,7 +129,7 @@ def _get_corr_parameters(time):
 
     Parameters
     ----------
-    time: float
+    sswtime: float
         The time of the observation, in SSW format
     """
     # Heater adjustment time
@@ -138,7 +138,8 @@ def _get_corr_parameters(time):
     adj2 = datetime_to_ssw_time(dt.datetime(2008, 8, 24, 00, 00, 00))
     # grating focus adjustment
     adj3 = datetime_to_ssw_time(dt.datetime(2008, 10, 21, 8, 00, 00))
-    if time < adj1:
+
+    if sswtime < adj1:
         correction_arr = np.array([4.10562e-01, 2.51204e+00, -7.03979e-01,
                                    1.21183e+00, -1.46165e+00, -2.03801e+00,
                                    -5.09189e+00, -3.31613e+00, 2.28654e-01,
@@ -152,7 +153,7 @@ def _get_corr_parameters(time):
                                    5.00476e+00, 6.83911e+00, 2.10491e+00,
                                    6.89056e+00])
         pixel_ref = 1.34524e+3
-    elif adj1 < time < adj2:
+    elif adj1 < sswtime < adj2:
         correction_arr = np.array([-7.60169e+00, -1.46383e+00, 3.64224e+00,
                                    6.22838e+00, 1.02071e+00, -5.87856e+00,
                                    -7.07813e+00, -3.29145e+00, -2.68002e+00,
@@ -180,7 +181,7 @@ def _get_corr_parameters(time):
                                    4.61089e-01, 6.69429e+00, -6.84122e-01,
                                    4.38880e+00])
         pixel_ref = 1.34281e+3
-        pixel_ref += 4.88 if adj2 < time < adj3 else 0
+        pixel_ref += 4.88 if adj2 < sswtime < adj3 else 0
     return correction_arr, pixel_ref
 
 
