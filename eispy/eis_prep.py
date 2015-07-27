@@ -173,7 +173,7 @@ def _try_download_nearest_cal(date, pix_type, detector, top_bot, left_right):
                                           top_bot, left_right)
         http_response = urllib.urlopen(url)
         http_response.close()
-        if http_response.code != 200:
+        if http_response.code != 200:  # HTTP 200 is "OK"
             dateafter = date + (day * i)
             url = _construct_hot_warm_pix_url(dateafter, pix_type, detector,
                                               top_bot, left_right)
@@ -183,7 +183,6 @@ def _try_download_nearest_cal(date, pix_type, detector, top_bot, left_right):
             http_down = urllib.urlretrieve(url)
             return readsav(http_down[0]).ccd_data
     raise UserWarning("No data found within one month of the specified date")
-    return np.zeros((512, 1024))
 
 
 def _construct_hot_warm_pix_url(date, pix_type, detector, top_bot, left_right):
@@ -203,6 +202,47 @@ def _construct_hot_warm_pix_url(date, pix_type, detector, top_bot, left_right):
         url += top_bot + '_'
         url += datestr + '_100s.sav'
     else:
-        url += datestr + '_'
-        url += top_bot + '.sav'
+        url += datestr
+        if detector != 'middle':
+            url += '_' + top_bot
+        url += '.sav'
     return url
+
+
+def _calculate_detectors(date, y_window_start, n_y_pixels, x_start, x_width):
+    """
+    Calculates what area of the detector the observation is in.
+    """
+    if date <= dt.datetime(2008, 1, 18):
+        top_bot = 'middle'
+    else:
+        top_bot = 'top' if y_window_start >= 512 else \
+                  'bottom' if y_window_start + n_y_pixels <= 512 else \
+                  'both'
+    # XXX: Warning: there may be an off-by-one error here!
+    left_right = 'right' if x_start % 2048 >= 1024 else \
+                 'left' if (x_start + x_width) % 2048 < 1024 else \
+                 'both'
+    return top_bot, left_right
+
+
+def _get_pixel_map(date, pix_type, detector, y_window, x_window):
+    """
+    Returns the pixel calibration map for the specified pixel type and detector
+    at the given date.
+    """
+    y_window_start = y_window[0]
+    x_start = x_window[0]
+    n_y_pixels = y_window[1] - y_window[0]
+    x_width = x_window[1] - y_window[0]
+    detector_areas = _calculate_detectors(date, y_window_start, n_y_pixels,
+                                          x_start, x_width)
+    arrays = _download_calibration_data(date, pix_type, detector,
+                                        detector_areas[0], detector_areas[1])
+    glued_array = np.zeros((1024, 2048))
+    zero_arr = np.zeros((512, 1024))
+    glued_array[0:1024, 0:512] = arrays.get('topleft', zero_arr)
+    glued_array[1024:2048, 512:1024] = arrays.get('bottomright', zero_arr)
+    glued_array[0:1024, 512:1024] = arrays.get('bottomleft', zero_arr)
+    glued_array[1024:2048, 0:512] = arrays.get('topright', zero_arr)
+    return glued_array[x_start:x_window[1], y_window_start:y_window[1]]
