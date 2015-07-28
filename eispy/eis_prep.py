@@ -16,9 +16,17 @@ import locale
 import urllib
 from bs4 import BeautifulSoup
 from astroscrappy import detect_cosmics
+from astropy import units as u
+import re
+from scipy.interpolate import spline
 
 __missing__ = -100
-__darts__ = "http://darts.jaxa.jp/pub/ssw/solarb/eis/data/cal/"
+__darts__ = "http://darts.jaxa.jp/pub/ssw/solarb/eis/"
+__eff_area_ver_a__ = '004'
+__eff_area_ver_b__ = '005'
+__eff_areas_a__ = {}
+__eff_areas_b__ = {}
+__CCD_gain__ = 6.93
 __pix_memo__ = {}
 
 
@@ -228,7 +236,7 @@ def _get_dusty_array(y_window, x_window):
     """
     Returns the sliced array of dusty pixels
     """
-    url = __darts__ + 'dp/dusty_pixels.sav'
+    url = __darts__ + 'data/cal/dp/dusty_pixels.sav'
     http_down = urllib.urlretrieve(url)
     dusties = readsav(http_down[0]).dp_data
     return dusties[y_window[0]:y_window[1], x_window[0]: x_window[1]]
@@ -262,7 +270,7 @@ def _get_cal_dates(pix_type):
     """
     Retrieves the list of available dates for a given pixel type.
     """
-    url = __darts__ + pix_type + '/'
+    url = __darts__ + 'data/cal/' + pix_type + '/'
     http_request = urllib.urlopen(url)
     soup = BeautifulSoup(http_request.read())
     http_request.close()
@@ -277,7 +285,7 @@ def _construct_hot_warm_pix_url(date, pix_type, detector, top_bot, left_right):
     Constructs a DARTS URL to download hot or warm pixels given the relevant
     parameters.
     """
-    url = __darts__
+    url = __darts__ + 'data/cal/'
     url += pix_type + '/'
     url += date.strftime("%Y-%m-%d") + '/'
     url += 'coords_' + detector + '_' + left_right + '_'
@@ -334,3 +342,60 @@ def _get_pixel_map(date, pix_type, detector, y_window, x_window):
     glued_array[0:512, 1024:2048] = arrays.get('topright', zero_arr)
     return glued_array[y_window_start:y_window[1],
                        x_start:(x_window[1] % 2048)]
+
+
+# =======================    Radio calibration utils    =======================
+def _get_pixel_solid_angle(detector, slit):
+    """
+    Calculates and returns the solid angle for a pixel used in the radiometric
+    calculations. Returns a dimensionless Astropy Quantity. This corresponds to
+    omega-d in the EIS software note 02.
+    """
+    mirror_focus_length = 1938.68 * u.mm
+    if slit == 1:
+        width = 9.3 * u.um
+        pix_factor = 1.067 if detector == 'A' else 1.087
+    elif slit == 2:
+        width = 19.2 * u.um
+        pix_factor = 2.08 if detector == 'A' else 2.119
+    return (width**2) / (mirror_focus_length**2 * pix_factor)
+
+
+def _get_effective_areas(detector):
+    """
+    Returns the effective detector areas for EIS, in a dictionary from floats
+    (in Angstroms) to Quantities.
+    """
+    areas_dic = __eff_areas_a__ if detector == 'A' else __eff_areas_b__
+    if len(areas_dic) > 0:
+        return areas_dic
+    url = __darts__ + 'response/EIS_EffArea_' + detector + '.'
+    url += __eff_area_ver_a__
+    urlfile = urllib.urlopen(url)
+    lines = [l.strip() for l in urlfile.readlines() if l[0] != '#']
+    urlfile.close()
+    areas = [re.findall(r'\d+\.\d+', l) for l in lines]
+    areas = {float(a[0]): float(a[1]) for a in areas}
+    areas_dic .update(areas)
+    return areas_dic
+
+
+def _get_eff_area_at_wl(detector, wavelengths):
+    """
+    Returns a spline interpolation of the effective area at the given lambdas.
+    """
+    dic = _get_effective_areas(detector)
+    return spline(dic.keys(), dic.values(), wavelengths) * u.cm**2
+
+
+def _get_number_of_photons(data_numbers, wavelengths):
+    """
+    Returns the number of photons that correspond to a given data number at a
+    given wavelength. The wavelength must be a float in Angstroms because those
+    are the units the conversion expects (Sorry, no Quantities yet)
+    """
+    # TODO: Make this use Quantities.
+    n_electrons = __CCD_gain__ * data_numbers
+    electrons_per_photon = 12398.5 / (wavelengths * 3.65)  # 3.65 is the energy
+    # of an electron-hole in Si, and 12398.5 is the conversion from A to eV.
+    return n_electrons / electrons_per_photon
