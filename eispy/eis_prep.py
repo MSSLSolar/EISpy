@@ -28,10 +28,10 @@ __pix_memo__ = {}
 def _read_fits(filename, **kwargs):
     """
     Reads a FITS file and returns two things: a dictionary of wavelengths to a
-    2-tuple of 3D ndarrays (data, error) and a dictionary containing all the l0
-    metadata found in the file. The error array is initailly set to 0, and has
-    the same shape as the data array. Extra keyword arguments are passed on to
-    the astropy fits reader.
+    3-tuple of 3D ndarrays (data, error, index) and a dictionary containing all
+    the l0 metadata found in the file. The error array is initailly set to 0,
+    and has the same shape as the data array. Extra keyword arguments are
+    passed on to the astropy fits reader.
 
     Parameters
     ----------
@@ -42,7 +42,8 @@ def _read_fits(filename, **kwargs):
     header = dict(hdulist[1].header)
     wavelengths = [c.name for c in hdulist[1].columns if c.dim is not None]
     data = {wav: hdulist[1].data[wav] for wav in wavelengths}
-    data_with_errors = {k: (data[k], np.zeros(data[k].shape)) for k in data}
+    data_with_errors = {k: (data[k], np.zeros(data[k].shape),
+                            wavelengths.index(k) + 1) for k in data}
     return data_with_errors, header
 
 
@@ -54,10 +55,10 @@ def _remove_zeros_saturated(*data_and_errors):
 
     Parameters
     ----------
-    data_and_errors: one or more 2-tuples of ndarrays
-        tuples of the form (data, error) to be stripped of invalid data
+    data_and_errors: one or more 3-tuples of ndarrays
+        tuples of the form (data, error, index) to be stripped of invalid data
     """
-    for data, err in data_and_errors:
+    for data, err, _ in data_and_errors:
         zeros = data <= 0
         saturated = data >= 16383  # saturated pixels have a value of 16383.
         zeros[saturated] = True  # equivalent to |=
@@ -77,24 +78,23 @@ def _remove_dark_current(meta, *data_and_errors, **kwargs):
     ----------
     meta: dict
         observation metadata
-    data_and_errors: one or more 2-tuples of ndarrays
-        tuples of the form (data, error) to be corrected
+    data_and_errors: one or more 3-tuples of ndarrays
+        tuples of the form (data, error, index) to be corrected
     retain: bool
         If True, data less than zero will be retained.
     """
-    window = 1
     retain = kwargs.pop('retain', False)
-    for data, err in data_and_errors:
-        ccd_xwidth = meta['TDETXW' + str(window)]
+    for data, err, idx in data_and_errors:
+        print idx
+        ccd_xwidth = meta['TDETXW' + str(idx)]
         if ccd_xwidth == 1024:
-            _remove_dark_current_full_ccd(data, meta, window)
+            _remove_dark_current_full_ccd(data, meta, idx)
         else:
             _remove_dark_current_part_ccd(data)
         if not retain:
             negatives = data <= 0
             data[negatives] = 0
             err[negatives] = __missing__
-        window += 1
 
 
 def _calibrate_pixels(meta, *data_and_errors):
@@ -107,16 +107,15 @@ def _calibrate_pixels(meta, *data_and_errors):
     ----------
     meta: dict
         observation metadata
-    data_and_errors: one or more 2-tuples of ndarrays
-        tuples of the form (data, error) to be corrected
+    data_and_errors: one or more 3-tuples of ndarrays
+        tuples of the form (data, error, index) to be corrected
     """
-    window = 1
-    for _, err in data_and_errors:
+    for _, err, index in data_and_errors:
         date = dt.datetime.strptime(meta['DATE_OBS'][:10], "%Y-%m-%d")
         y_window = (meta['YWS'], meta['YWS'] + meta['YW'])
-        x_window = (meta['TDETX' + str(window)], meta['TDETX' + str(window)] +
-                                                 meta['TDETXW' + str(window)])
-        detector = meta['TWBND' + str(window)].lower()
+        x_window = (meta['TDETX' + str(index)], (meta['TDETX' + str(index)] +
+                                                 meta['TDETXW' + str(index)]))
+        detector = meta['TWBND' + str(index)].lower()
         hots = _get_pixel_map(date, 'hp', detector, y_window, x_window)
         warms = _get_pixel_map(date, 'wp', detector, y_window, x_window)
         dusties = _get_dusty_array(y_window, x_window)
@@ -124,8 +123,7 @@ def _calibrate_pixels(meta, *data_and_errors):
         locations[warms == 1] = True
         locations[dusties == 1] = True
         for x_slice in err:
-            x_slice[locations.T] = __missing__
-        window += 1
+            x_slice[locations] = __missing__
 
 
 def _remove_cosmic_rays(*data_and_errors, **kwargs):
@@ -136,12 +134,12 @@ def _remove_cosmic_rays(*data_and_errors, **kwargs):
 
     Parameters
     ----------
-    data_and_errors: one or more 2-tuples of ndarrays
-        tuples of the form (data, error) to be corrected
+    data_and_errors: one or more 3-tuples of ndarrays
+        tuples of the form (data, error, index) to be corrected
     kwargs: dict-like, optional
         Extra arguments to be passed on to astroscrappy.
     """
-    for data, err in data_and_errors:
+    for data, err, _ in data_and_errors:
         slices = [detect_cosmics(ccd_slice, **kwargs) for ccd_slice in data]
         data = np.array([ccd_slice[1] for ccd_slice in slices])
         mask = np.array([ccd_slice[0] for ccd_slice in slices])
@@ -233,7 +231,7 @@ def _get_dusty_array(y_window, x_window):
     url = __darts__ + 'dp/dusty_pixels.sav'
     http_down = urllib.urlretrieve(url)
     dusties = readsav(http_down[0]).dp_data
-    return dusties[x_window[0]: x_window[1], y_window[0]:y_window[1]]
+    return dusties[y_window[0]:y_window[1], x_window[0]: x_window[1]]
 
 
 def _try_download_nearest_cal(date, pix_type, detector, top_bot, left_right):
@@ -334,5 +332,5 @@ def _get_pixel_map(date, pix_type, detector, y_window, x_window):
     glued_array[512:1024, 1024:2048] = arrays.get('bottomright', zero_arr)
     glued_array[512:1024, 0:1024] = arrays.get('bottomleft', zero_arr)
     glued_array[0:512, 1024:2048] = arrays.get('topright', zero_arr)
-    return glued_array[x_start:(x_window[1] % 2048),
-                       y_window_start:y_window[1]]
+    return glued_array[y_window_start:y_window[1],
+                       x_start:(x_window[1] % 2048)]
