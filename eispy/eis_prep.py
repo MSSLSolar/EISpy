@@ -17,8 +17,9 @@ import urllib
 from bs4 import BeautifulSoup
 from astroscrappy import detect_cosmics
 from astropy import units as u
+from astropy import constants
 import re
-from scipy.interpolate import spline
+from scipy.interpolate import UnivariateSpline
 
 __missing__ = -100
 __darts__ = "http://darts.jaxa.jp/pub/ssw/solarb/eis/"
@@ -28,6 +29,20 @@ __eff_areas_a__ = {}
 __eff_areas_b__ = {}
 __CCD_gain__ = 6.93
 __pix_memo__ = {}
+# TODO: Correct Sensitivity
+# TODO: interpolations
+# TODO: errors
+
+
+def eis_prep(filename, **kwargs):
+    # TODO: Write docstring
+    data_and_errors, meta = _read_fits(filename, **kwargs)
+    _remove_zeros_saturated(*data_and_errors)
+    _remove_dark_current(meta, *data_and_errors, **kwargs)
+    _calibrate_pixels(meta, *data_and_errors)
+    _remove_cosmic_rays(*data_and_errors, **kwargs)
+    _radiometric_calibration(meta, *data_and_errors)
+    return data_and_errors, meta
 
 
 # /===========================================================================\
@@ -48,10 +63,11 @@ def _read_fits(filename, **kwargs):
     """
     hdulist = fits.open(filename, **kwargs)
     header = dict(hdulist[1].header)
-    wavelengths = [c.name for c in hdulist[1].columns if c.dim is not None]
-    data = {wav: hdulist[1].data[wav] for wav in wavelengths}
-    data_with_errors = {k: (data[k], np.zeros(data[k].shape),
-                            wavelengths.index(k) + 1) for k in data}
+    waves = [c.name for c in hdulist[1].columns if c.dim is not None]
+    data = {wav: np.array(hdulist[1].data[wav], dtype=u.Quantity)
+            for wav in waves}
+    data_with_errors = [(data[k], np.zeros(data[k].shape),
+                         waves.index(k) + 1) for k in data]
     return data_with_errors, header
 
 
@@ -67,6 +83,7 @@ def _remove_zeros_saturated(*data_and_errors):
         tuples of the form (data, error, index) to be stripped of invalid data
     """
     for data, err, _ in data_and_errors:
+        data = np.array(data, dtype=float)
         zeros = data <= 0
         saturated = data >= 16383  # saturated pixels have a value of 16383.
         zeros[saturated] = True  # equivalent to |=
@@ -93,7 +110,6 @@ def _remove_dark_current(meta, *data_and_errors, **kwargs):
     """
     retain = kwargs.pop('retain', False)
     for data, err, idx in data_and_errors:
-        print idx
         ccd_xwidth = meta['TDETXW' + str(idx)]
         if ccd_xwidth == 1024:
             _remove_dark_current_full_ccd(data, meta, idx)
@@ -152,6 +168,39 @@ def _remove_cosmic_rays(*data_and_errors, **kwargs):
         data = np.array([ccd_slice[1] for ccd_slice in slices])
         mask = np.array([ccd_slice[0] for ccd_slice in slices])
         err[mask] = True
+
+
+def _radiometric_calibration(meta, *data_and_errors):
+    """
+    Performs the radiometric calculations and conversions from data numbers to
+    units of spectral radiance.
+
+    Parameters
+    ----------
+    meta: dict
+        observation metadata
+    data_and_errors: one or more 3-tuples of ndarrays
+        tuples of the form (data, error, index) to be corrected
+    """
+    for data, err, index in data_and_errors:
+        wl_start = meta['TWMIN' + str(index)]
+        wl_end = meta['TWMAX' + str(index)]
+        wl_num = data.shape[2]
+        wavelengths = np.linspace(wl_start, wl_end, wl_num)
+        obs_start = dt.datetime.strptime(meta['DATE_OBS'],
+                                         "%Y-%m-%dT%H:%M:%S.000")
+        obs_end = dt.datetime.strptime(meta['DATE_END'],
+                                       "%Y-%m-%dT%H:%M:%S.000")
+        total_time = (obs_end - obs_start).total_seconds()
+        seconds_per_exposure = total_time / data.shape[0]
+        detector = meta['TWBND' + str(index)]
+        slit = 2 if meta['SLIT_IND'] == 2 else 0  # 1" slit has index 0
+        _conv_dn_to_number_of_photons(data, wavelengths)
+        data /= seconds_per_exposure
+        data /= u.s
+        _conv_photon_rate_to_intensity(data, wavelengths, detector, slit)
+        _conv_phot_int_to_radiance(data, wavelengths)
+        data = data.to(u.erg / ((u.cm**2) * u.Angstrom * u.s * u.sr))
 
 
 # /===========================================================================\
@@ -383,19 +432,59 @@ def _get_effective_areas(detector):
 def _get_eff_area_at_wl(detector, wavelengths):
     """
     Returns a spline interpolation of the effective area at the given lambdas.
+    Wavelengths should be floats, in Angstroms.
     """
     dic = _get_effective_areas(detector)
-    return spline(dic.keys(), dic.values(), wavelengths) * u.cm**2
+    spl = UnivariateSpline(dic.keys(), dic.values())
+    return spl(wavelengths) * u.cm**2
 
 
-def _get_number_of_photons(data_numbers, wavelengths):
+def _conv_dn_to_number_of_photons(data_numbers, wavelengths):
     """
     Returns the number of photons that correspond to a given data number at a
     given wavelength. The wavelength must be a float in Angstroms because those
     are the units the conversion expects (Sorry, no Quantities yet)
     """
     # TODO: Make this use Quantities.
-    n_electrons = __CCD_gain__ * data_numbers
+    data_numbers *= __CCD_gain__
     electrons_per_photon = 12398.5 / (wavelengths * 3.65)  # 3.65 is the energy
     # of an electron-hole in Si, and 12398.5 is the conversion from A to eV.
-    return n_electrons / electrons_per_photon
+    data_numbers /= electrons_per_photon
+    return data_numbers
+
+
+def _conv_photon_rate_to_intensity(photons_per_second, wavelengths, detector,
+                                   slit):
+    """
+    Converts an array containing the rate of photon incidence into an array of
+    photons.cm-2.s-1.sr-1. Wavelengths should be floats, in Angstroms.
+    """
+    pix_solid_angle = _get_pixel_solid_angle(detector, slit)
+    areas = _get_eff_area_at_wl(detector, wavelengths)
+    photons_per_second /= pix_solid_angle
+    for wav in range(len(areas)):
+        data_slice = photons_per_second[:, :, wav]
+        data_slice /= areas[wav]
+    photons_per_second /= areas[0].unit
+    photons_per_second /= u.sr
+
+
+def _get_radiance_factor(wavelengths):
+    """
+    Returns the radiance conversion factor to convert photon intensities to
+    spectral radiance.
+    """
+    wavelengths *= u.Angstrom
+    return constants.c * constants.h / (wavelengths**2)
+
+
+def _conv_phot_int_to_radiance(photon_intensity, wavelengths):
+    """
+    Converts an array containing the photon intensity of a measurement into
+    spectral radiance, in units of power.area-1.time-1.wavelength-1.sr-1
+    """
+    radiance_factors = _get_radiance_factor(wavelengths)
+    for i in range(len(wavelengths)):
+        data_slice = photon_intensity[:, :, i]
+        data_slice *= radiance_factors[i]
+    photon_intensity *= radiance_factors[0].unit
