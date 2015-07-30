@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 # Author: Mateo Inchaurrandieta <mateo.inchaurrandieta@gmail.com>
-# pylint: disable=E1101
+# pylint: disable=E1101, E0611
 """
 Calibration and error calculation for EIS level 0 files.
 This module calls several corrections, then attempts to interpolate missing or
@@ -23,6 +23,7 @@ from scipy.interpolate import UnivariateSpline
 from math import exp
 
 __missing__ = -100
+__interp_missing__ = -1
 __darts__ = "http://darts.jaxa.jp/pub/ssw/solarb/eis/"
 __eff_area_ver_a__ = '004'
 __eff_area_ver_b__ = '005'
@@ -31,8 +32,6 @@ __eff_areas_b__ = {}
 __CCD_gain__ = 6.93
 __pix_memo__ = {}
 __sensitivity_tau__ = 1894.0
-# TODO: Correct Sensitivity
-# TODO: interpolations
 # TODO: errors
 
 
@@ -42,6 +41,7 @@ def eis_prep(filename, **kwargs):
     _remove_zeros_saturated(*data_and_errors)
     _remove_dark_current(meta, *data_and_errors, **kwargs)
     _calibrate_pixels(meta, *data_and_errors)
+    _interpolate_missing_pixels(*data_and_errors)
     _remove_cosmic_rays(*data_and_errors, **kwargs)
     _correct_sensitivity(meta, *data_and_errors)
     _radiometric_calibration(meta, *data_and_errors)
@@ -86,7 +86,6 @@ def _remove_zeros_saturated(*data_and_errors):
         tuples of the form (data, error, index) to be stripped of invalid data
     """
     for data, err, _ in data_and_errors:
-        data = np.array(data, dtype=float)
         zeros = data <= 0
         saturated = data >= 16383  # saturated pixels have a value of 16383.
         zeros[saturated] = True  # equivalent to |=
@@ -153,6 +152,21 @@ def _calibrate_pixels(meta, *data_and_errors):
             x_slice[locations] = __missing__
 
 
+def _interpolate_missing_pixels(*data_and_errors):
+    """
+    Interpolates missing pixels, marking them as corrected if this is the case.
+    Error calculation is different when a pixel has been corrected.
+    """
+    for data, err, _ in data_and_errors:
+        missing = np.array(np.where(err == __missing__)).T
+        ymax = err.shape[1]
+        for x, y, z in missing:
+            y_p, y_n, n_weight = _get_neighbors(y, ymax, err, x, z)
+            if n_weight is not None:
+                data[x, y, z] = y_n * n_weight + y_p * (1 - n_weight)
+                err[x, y, z] = __interp_missing__  # mark as corrected
+
+
 def _remove_cosmic_rays(*data_and_errors, **kwargs):
     """
     Removes and corrects for cosmic ray damage in the measurements. This method
@@ -170,40 +184,7 @@ def _remove_cosmic_rays(*data_and_errors, **kwargs):
         slices = [detect_cosmics(ccd_slice, **kwargs) for ccd_slice in data]
         data = np.array([ccd_slice[1] for ccd_slice in slices])
         mask = np.array([ccd_slice[0] for ccd_slice in slices])
-        err[mask] = True
-
-
-def _radiometric_calibration(meta, *data_and_errors):
-    """
-    Performs the radiometric calculations and conversions from data numbers to
-    units of spectral radiance.
-
-    Parameters
-    ----------
-    meta: dict
-        observation metadata
-    data_and_errors: one or more 3-tuples of ndarrays
-        tuples of the form (data, error, index) to be corrected
-    """
-    obs_start = dt.datetime.strptime(meta['DATE_OBS'],
-                                     "%Y-%m-%dT%H:%M:%S.000")
-    obs_end = dt.datetime.strptime(meta['DATE_END'],
-                                   "%Y-%m-%dT%H:%M:%S.000")
-    total_time = (obs_end - obs_start).total_seconds()
-    for data, err, index in data_and_errors:
-        wl_start = meta['TWMIN' + str(index)]
-        wl_end = meta['TWMAX' + str(index)]
-        wl_num = data.shape[2]
-        wavelengths = np.linspace(wl_start, wl_end, wl_num)
-        detector = meta['TWBND' + str(index)]
-        slit = 2 if meta['SLIT_IND'] == 2 else 0  # 1" slit has index 0
-        _conv_dn_to_number_of_photons(data, wavelengths)
-        seconds_per_exposure = total_time / data.shape[0]
-        data /= seconds_per_exposure
-        data /= u.s
-        _conv_photon_rate_to_intensity(data, wavelengths, detector, slit)
-        _conv_phot_int_to_radiance(data, wavelengths)
-        data = data.to(u.erg / ((u.cm**2) * u.Angstrom * u.s * u.sr))
+        err[mask] = __interp_missing__  # mark as corrected
 
 
 def _correct_sensitivity(meta, *data_and_errors):
@@ -225,6 +206,39 @@ def _correct_sensitivity(meta, *data_and_errors):
     factor = exp(days / __sensitivity_tau__)
     for data, _, _ in data_and_errors:
         data /= factor
+
+
+def _radiometric_calibration(meta, *data_and_errors):
+    """
+    Performs the radiometric calculations and conversions from data numbers to
+    units of spectral radiance.
+
+    Parameters
+    ----------
+    meta: dict
+        observation metadata
+    data_and_errors: one or more 3-tuples of ndarrays
+        tuples of the form (data, error, index) to be corrected
+    """
+    obs_start = dt.datetime.strptime(meta['DATE_OBS'],
+                                     "%Y-%m-%dT%H:%M:%S.000")
+    obs_end = dt.datetime.strptime(meta['DATE_END'],
+                                   "%Y-%m-%dT%H:%M:%S.000")
+    total_time = (obs_end - obs_start).total_seconds()
+    for data, _, index in data_and_errors:
+        wl_start = meta['TWMIN' + str(index)]
+        wl_end = meta['TWMAX' + str(index)]
+        wl_num = data.shape[2]
+        wavelengths = np.linspace(wl_start, wl_end, wl_num)
+        detector = meta['TWBND' + str(index)]
+        slit = 2 if meta['SLIT_IND'] == 2 else 0  # 1" slit has index 0
+        _conv_dn_to_number_of_photons(data, wavelengths)
+        seconds_per_exposure = total_time / data.shape[0]
+        data /= seconds_per_exposure
+        data /= u.s
+        _conv_photon_rate_to_intensity(data, wavelengths, detector, slit)
+        _conv_phot_int_to_radiance(data, wavelengths)
+        data = data.to(u.erg / ((u.cm**2) * u.Angstrom * u.s * u.sr))
 
 
 # /===========================================================================\
@@ -512,3 +526,28 @@ def _conv_phot_int_to_radiance(photon_intensity, wavelengths):
         data_slice = photon_intensity[:, :, i]
         data_slice *= radiance_factors[i]
     photon_intensity *= radiance_factors[0].unit
+
+
+# ========================    Interpolation utils    ==========================
+def _get_neighbors(y, ymax, err, x, z):
+    """
+    Returns the locations of the pixels to use to interpolate a missing pixel
+    and their weights.
+    """
+    y_p = y_n = 0
+    for i in range(1, 4):
+        if y_p is 0:
+            y_p = i if y - i >= 0 and err[x, y - i, z] >= 0 else 0
+        if y_n is 0:
+            y_n = i if y + i < ymax and err[x, y + i, z] >= 0 else 0
+    if y_p == 0:
+        weight = 1.0 if y_n == 1 else None
+    elif y_n == 0:
+        weight = 0.0 if y_p == 1 else None
+    elif y_p == 1:
+        weight = 0.5 if y_n == 1 else 1/3 if y_n == 2 else 2/9
+    elif y_n == 1:
+        weight = 2/3 if y_p == 2 else 7/9
+    elif y_p == 2:
+        weight = 0.5 if y_p == 2 else None
+    return y - y_p, y + y_n, weight
