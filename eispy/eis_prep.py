@@ -20,6 +20,7 @@ from astropy import units as u
 from astropy import constants
 import re
 from scipy.interpolate import UnivariateSpline
+from math import exp
 
 __missing__ = -100
 __darts__ = "http://darts.jaxa.jp/pub/ssw/solarb/eis/"
@@ -29,6 +30,7 @@ __eff_areas_a__ = {}
 __eff_areas_b__ = {}
 __CCD_gain__ = 6.93
 __pix_memo__ = {}
+__sensitivity_tau__ = 1894.0
 # TODO: Correct Sensitivity
 # TODO: interpolations
 # TODO: errors
@@ -41,6 +43,7 @@ def eis_prep(filename, **kwargs):
     _remove_dark_current(meta, *data_and_errors, **kwargs)
     _calibrate_pixels(meta, *data_and_errors)
     _remove_cosmic_rays(*data_and_errors, **kwargs)
+    _correct_sensitivity(meta, *data_and_errors)
     _radiometric_calibration(meta, *data_and_errors)
     return data_and_errors, meta
 
@@ -134,9 +137,9 @@ def _calibrate_pixels(meta, *data_and_errors):
     data_and_errors: one or more 3-tuples of ndarrays
         tuples of the form (data, error, index) to be corrected
     """
+    date = dt.datetime.strptime(meta['DATE_OBS'][:10], "%Y-%m-%d")
+    y_window = (meta['YWS'], meta['YWS'] + meta['YW'])
     for _, err, index in data_and_errors:
-        date = dt.datetime.strptime(meta['DATE_OBS'][:10], "%Y-%m-%d")
-        y_window = (meta['YWS'], meta['YWS'] + meta['YW'])
         x_window = (meta['TDETX' + str(index)], (meta['TDETX' + str(index)] +
                                                  meta['TDETXW' + str(index)]))
         detector = meta['TWBND' + str(index)].lower()
@@ -182,25 +185,46 @@ def _radiometric_calibration(meta, *data_and_errors):
     data_and_errors: one or more 3-tuples of ndarrays
         tuples of the form (data, error, index) to be corrected
     """
+    obs_start = dt.datetime.strptime(meta['DATE_OBS'],
+                                     "%Y-%m-%dT%H:%M:%S.000")
+    obs_end = dt.datetime.strptime(meta['DATE_END'],
+                                   "%Y-%m-%dT%H:%M:%S.000")
+    total_time = (obs_end - obs_start).total_seconds()
     for data, err, index in data_and_errors:
         wl_start = meta['TWMIN' + str(index)]
         wl_end = meta['TWMAX' + str(index)]
         wl_num = data.shape[2]
         wavelengths = np.linspace(wl_start, wl_end, wl_num)
-        obs_start = dt.datetime.strptime(meta['DATE_OBS'],
-                                         "%Y-%m-%dT%H:%M:%S.000")
-        obs_end = dt.datetime.strptime(meta['DATE_END'],
-                                       "%Y-%m-%dT%H:%M:%S.000")
-        total_time = (obs_end - obs_start).total_seconds()
-        seconds_per_exposure = total_time / data.shape[0]
         detector = meta['TWBND' + str(index)]
         slit = 2 if meta['SLIT_IND'] == 2 else 0  # 1" slit has index 0
         _conv_dn_to_number_of_photons(data, wavelengths)
+        seconds_per_exposure = total_time / data.shape[0]
         data /= seconds_per_exposure
         data /= u.s
         _conv_photon_rate_to_intensity(data, wavelengths, detector, slit)
         _conv_phot_int_to_radiance(data, wavelengths)
         data = data.to(u.erg / ((u.cm**2) * u.Angstrom * u.s * u.sr))
+
+
+def _correct_sensitivity(meta, *data_and_errors):
+    """
+    Corrects for the loss of CCD sensitivity throughout time.
+
+    Parameters
+    ----------
+    meta: dict
+        observation metadata
+    data_and_errors: one or more 3-tuples of ndarrays
+        tuples of the form (data, error, index) to be corrected
+    """
+    launch = dt.datetime(2006, 9, 22, 21, 36, 0)  # Hinode launch date
+    obs_start = dt.datetime.strptime(meta['DATE_OBS'],
+                                     "%Y-%m-%dT%H:%M:%S.000")
+    delta = launch - obs_start
+    days = delta.days + delta.seconds / 86400
+    factor = exp(days / __sensitivity_tau__)
+    for data, _, _ in data_and_errors:
+        data /= factor
 
 
 # /===========================================================================\
@@ -347,7 +371,7 @@ def _construct_hot_warm_pix_url(date, pix_type, detector, top_bot, left_right):
         url += datestr + '_100s.sav'
     else:
         url += datestr
-        if detector != 'middle':
+        if top_bot != 'middle':
             url += '_' + top_bot
         url += '.sav'
     return url
