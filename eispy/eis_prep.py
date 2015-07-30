@@ -23,7 +23,6 @@ from scipy.interpolate import UnivariateSpline
 from math import exp
 
 __missing__ = -100
-__interp_missing__ = -1
 __darts__ = "http://darts.jaxa.jp/pub/ssw/solarb/eis/"
 __eff_area_ver_a__ = '004'
 __eff_area_ver_b__ = '005'
@@ -107,20 +106,16 @@ def _remove_dark_current(meta, *data_and_errors, **kwargs):
         observation metadata
     data_and_errors: one or more 3-tuples of ndarrays
         tuples of the form (data, error, index) to be corrected
-    retain: bool
-        If True, data less than zero will be retained.
     """
-    retain = kwargs.pop('retain', False)
     for data, err, idx in data_and_errors:
         ccd_xwidth = meta['TDETXW' + str(idx)]
         if ccd_xwidth == 1024:
             _remove_dark_current_full_ccd(data, meta, idx)
         else:
             _remove_dark_current_part_ccd(data)
-        if not retain:
-            negatives = data <= 0
-            data[negatives] = 0
-            err[negatives] = __missing__
+        negatives = data <= 0
+        data[negatives] = 0
+        err[negatives] = __missing__
 
 
 def _calibrate_pixels(meta, *data_and_errors):
@@ -138,7 +133,7 @@ def _calibrate_pixels(meta, *data_and_errors):
     """
     date = dt.datetime.strptime(meta['DATE_OBS'][:10], "%Y-%m-%d")
     y_window = (meta['YWS'], meta['YWS'] + meta['YW'])
-    for _, err, index in data_and_errors:
+    for data, err, index in data_and_errors:
         x_window = (meta['TDETX' + str(index)], (meta['TDETX' + str(index)] +
                                                  meta['TDETXW' + str(index)]))
         detector = meta['TWBND' + str(index)].lower()
@@ -148,8 +143,9 @@ def _calibrate_pixels(meta, *data_and_errors):
         locations = hots == 1
         locations[warms == 1] = True
         locations[dusties == 1] = True
-        for x_slice in err:
-            x_slice[locations] = __missing__
+        for x_slice in range(err.size[0]):
+            err[x_slice][locations] = __missing__
+            data[x_slice][locations] = 0
 
 
 def _interpolate_missing_pixels(*data_and_errors):
@@ -164,7 +160,7 @@ def _interpolate_missing_pixels(*data_and_errors):
             y_p, y_n, n_weight = _get_neighbors(y, ymax, err, x, z)
             if n_weight is not None:
                 data[x, y, z] = y_n * n_weight + y_p * (1 - n_weight)
-                err[x, y, z] = __interp_missing__  # mark as corrected
+                err[x, y, z] = 0  # mark as corrected
 
 
 def _remove_cosmic_rays(*data_and_errors, **kwargs):
@@ -180,11 +176,11 @@ def _remove_cosmic_rays(*data_and_errors, **kwargs):
     kwargs: dict-like, optional
         Extra arguments to be passed on to astroscrappy.
     """
+    kwargs = _clean_kwargs(**kwargs)
     for data, err, _ in data_and_errors:
-        slices = [detect_cosmics(ccd_slice, **kwargs) for ccd_slice in data]
+        slices = [detect_cosmics(data[i], inmask=(err[i] == __missing__),
+                                 **kwargs) for i in range(data.shape[0])]
         data = np.array([ccd_slice[1] for ccd_slice in slices])
-        mask = np.array([ccd_slice[0] for ccd_slice in slices])
-        err[mask] = __interp_missing__  # mark as corrected
 
 
 def _correct_sensitivity(meta, *data_and_errors):
@@ -225,7 +221,7 @@ def _radiometric_calibration(meta, *data_and_errors):
     obs_end = dt.datetime.strptime(meta['DATE_END'],
                                    "%Y-%m-%dT%H:%M:%S.000")
     total_time = (obs_end - obs_start).total_seconds()
-    for data, _, index in data_and_errors:
+    for data, err, index in data_and_errors:
         wl_start = meta['TWMIN' + str(index)]
         wl_end = meta['TWMAX' + str(index)]
         wl_num = data.shape[2]
@@ -236,9 +232,22 @@ def _radiometric_calibration(meta, *data_and_errors):
         seconds_per_exposure = total_time / data.shape[0]
         data /= seconds_per_exposure
         data /= u.s
+        _calculate_errors(data, err, meta)
         _conv_photon_rate_to_intensity(data, wavelengths, detector, slit)
         _conv_phot_int_to_radiance(data, wavelengths)
         data = data.to(u.erg / ((u.cm**2) * u.Angstrom * u.s * u.sr))
+
+
+def _calculate_errors(data, err, index, meta):
+    mask = err == 0
+    err[mask] = data[mask]
+    x_start = meta['TDETX' + str(index)]
+    dark_current_err = (2.26 if x_start < 1074 else
+                        2.29 if 1074 <= x_start <= 2098 else
+                        2.37 if 2098 <= x_start <= 3222 else
+                        2.24)
+    err[mask] += dark_current_err**2
+    err[mask] = np.sqrt(err[mask])
 
 
 # /===========================================================================\
@@ -402,9 +411,9 @@ def _calculate_detectors(date, y_window_start, n_y_pixels, x_start, x_width):
                   'bottom' if y_window_start + n_y_pixels <= 512 else \
                   'both'
     # XXX: Warning: there may be an off-by-one error here!
-    left_right = 'right' if x_start >= 1024 else \
-                 'left' if (x_start + x_width) < 1024 else \
-                 'both'
+    left_right = 'right' if x_start - 50 >= 1024 else \
+                 'left' if (x_start - 50 + x_width) < 1024 else \
+                 'both'  # CCD starts at pixel 50
     return top_bot, left_right
 
 
@@ -528,7 +537,7 @@ def _conv_phot_int_to_radiance(photon_intensity, wavelengths):
     photon_intensity *= radiance_factors[0].unit
 
 
-# ========================    Interpolation utils    ==========================
+# ========================    Interpolation utils    =========================
 def _get_neighbors(y, ymax, err, x, z):
     """
     Returns the locations of the pixels to use to interpolate a missing pixel
@@ -550,4 +559,21 @@ def _get_neighbors(y, ymax, err, x, z):
         weight = 2/3 if y_p == 2 else 7/9
     elif y_p == 2:
         weight = 0.5 if y_p == 2 else None
+    else:
+        weight = None
     return y - y_p, y + y_n, weight
+
+
+# =====================    Cosmic Ray Removal utils    =======================
+def _clean_kwargs(**kwargs):
+    """
+    Returns a kwargs dictionary containing only the ones used by astroscrappy.
+    We have to do this because astroscrappy doesn't properly sanitize their
+    '
+    """
+    cosmic_args = ['inmask', 'sigclip', 'sigfrac', 'onjlim', 'pssl', 'gain',
+                   'readnoise', 'satlevel', 'niter', 'sepmed', 'cleantype',
+                   'fsmode', 'psfmodel', 'psfwhm', 'psfsize', 'psfk',
+                   'psfbeta', 'verbose']
+    cosmic_kwargs = {k: kwargs[k] for k in kwargs if k in cosmic_args}
+    return cosmic_kwargs
