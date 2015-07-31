@@ -78,8 +78,11 @@ def eis_prep(filename, **kwargs):
         conversion will also change the errors to have the correct units.
     institute='Unknown institute': str
         Institute where this method is run, to write to the FITS file.
+    outdir=None: str
+        Location of the directory to output files to. If not provided, the
+        function will simply return the corrected data and errors as a list
+        of tuples, along with the level 0 metadata.
     """
-    # TODO: FITS error output
     # TODO: verbose?
     data_and_errors, meta = _read_fits(filename, **kwargs)
     if kwargs.get('zeros', True):
@@ -94,7 +97,11 @@ def eis_prep(filename, **kwargs):
     if kwargs.get('sens', True):
         _correct_sensitivity(meta, *data_and_errors)
     _radiometric_calibration(meta, *data_and_errors, **kwargs)
-    return data_and_errors, meta
+    outdir = kwargs.get('outdir', None)
+    if outdir is not None:
+        _write_to_fits(outdir, filename, *data_and_errors, **kwargs)
+    else:
+        return data_and_errors, meta
 
 
 # /===========================================================================\
@@ -267,7 +274,7 @@ def _radiometric_calibration(meta, *data_and_errors, **kwargs):
         tuples of the form (data, error, index) to be corrected
     """
     obs_start = dt.datetime.strptime(meta['DATE_OBS'],
-                                     header['TDMIN' + str(index)] = data.min())
+                                     "%Y-%m-%dT%H:%M:%S.000")
     obs_end = dt.datetime.strptime(meta['DATE_END'],
                                    "%Y-%m-%dT%H:%M:%S.000")
     total_time = (obs_end - obs_start).total_seconds()
@@ -282,7 +289,7 @@ def _radiometric_calibration(meta, *data_and_errors, **kwargs):
         seconds_per_exposure = total_time / data.shape[0]
         data /= seconds_per_exposure
         data /= u.s
-        _calculate_errors(data, err, meta)
+        _calculate_errors(data, err, index, meta)
         _conv_photon_rate_to_intensity(data, wavelengths, detector, slit)
         if kwargs.get('phot2int', True):
             _conv_phot_int_to_radiance(data, err, wavelengths)
@@ -290,6 +297,21 @@ def _radiometric_calibration(meta, *data_and_errors, **kwargs):
 
 
 def _write_to_fits(outdir, filename_in, *data_and_errors, **kwargs):
+    """
+    Writes the given data and errors to a new level 1 and error FITS files,
+    with updated header values.
+
+    Parameters
+    ----------
+    outdir: str
+        Directory to output the files
+    filename_in: str
+        Location of the level 0 FITS file
+    data_and_errors: one or more 3-tuples of ndarrays
+        tuples of the form (data, error, index) to be corrected
+    kwargs: dict
+        Keyword arguments, used to update the header.
+    """
     hdulist = fits.open(filename_in, memmap=True)
     main_header = hdulist[0].header
     data_header = hdulist[1].header
@@ -301,6 +323,10 @@ def _write_to_fits(outdir, filename_in, *data_and_errors, **kwargs):
                                     "%Y-%m-%dT%H:%M:%S.000")
     datestr = date_obs.strftime("%Y%m%d_%H%M%S")
     filename = "eis_l1_" + datestr + ".fits"
+    hdulist.writeto(outdir + filename)
+    for _, err, index in data_and_errors:
+        _update_table_and_header(hdulist[1], err, index)
+    filename = "eis_er_" + datestr + ".fits"
     hdulist.writeto(outdir + filename)
 
 
@@ -712,6 +738,9 @@ def _update_header(header, **kwargs):
 
 
 def _update_table_and_header(hdu, data, index):
+    """
+    Updates the table and header values of the data HDU.
+    """
     header = hdu.header
     name = hdu.columns[index - 1].name
     hdu.data[name] = data
