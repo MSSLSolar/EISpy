@@ -63,23 +63,60 @@ def eis_prep(filename, **kwargs):
         Location of the directory to output files to. If not provided, the
         function will simply return the corrected data and errors as a list
         of tuples, along with the level 0 metadata.
+    verbose=False: bool
+        If True, progress messages will be output to the console.
     """
-    # TODO: verbose?
+    verbose = kwargs.get('verbose', False)
+    if verbose:
+        print "Reading file..."
     data_and_errors, meta = io.read_fits(filename, **kwargs)
-    if kwargs.get('zeros', True):
-        pc.remove_zeros_saturated(*data_and_errors)
-    if kwargs.get('darkcur', True):
-        pc.remove_dark_current(meta, *data_and_errors)
-    pc.calibrate_pixels(meta, *data_and_errors, **kwargs)
-    if kwargs.get('interp', True):
-        dc.interpolate_missing_pixels(*data_and_errors)
-    if kwargs.get('cosmics', True):
-        dc.remove_cosmic_rays(*data_and_errors, **kwargs)
-    if kwargs.get('sens', True):
-        dc.correct_sensitivity(meta, *data_and_errors)
-    dc.radiometric_calibration(meta, *data_and_errors, **kwargs)
+    _pixel_calibration(meta, *data_and_errors, **kwargs)
+    _data_calibration(meta, *data_and_errors, **kwargs)
     outdir = kwargs.get('outdir', None)
     if outdir is not None:
+        if verbose:
+            print "Done! Writing to file..."
         io.write_to_fits(outdir, filename, *data_and_errors, **kwargs)
     else:
         return data_and_errors, meta
+
+
+def _pixel_calibration(meta, *data_and_errors, **kwargs):
+    """
+    Wrapper for the pixel calibration steps of eis_prep
+    """
+    verbose = kwargs.get('verbose', False)
+    if kwargs.get('zeros', True):
+        if verbose:
+            print "Removing zeros and saturated values..."
+        pc.remove_zeros_saturated(*data_and_errors)
+    if kwargs.get('darkcur', True):
+        if verbose:
+            print "Removing Dark Current..."
+        pc.remove_dark_current(meta, *data_and_errors)
+    if verbose:
+        print "Marking defective pixels..."
+        print "\tThis step may take a long time and requires internet access"
+    pc.calibrate_pixels(meta, *data_and_errors, **kwargs)
+
+
+def _data_calibration(meta, *data_and_errors, **kwargs):
+    """
+    Wrapper for the data calibration steps of eis_prep
+    """
+    verbose = kwargs.get('verbose', False)
+    if kwargs.get('interp', True):
+        if verbose:
+            print "Interpolating missing pixels..."
+        dc.interpolate_missing_pixels(*data_and_errors)
+    if kwargs.get('cosmics', True):
+        if verbose:
+            print "Removing cosmic rays..."
+        dc.remove_cosmic_rays(*data_and_errors, **kwargs)
+    if kwargs.get('sens', True):
+        if verbose:
+            print "Correcting for sensitivity losses"
+        dc.correct_sensitivity(meta, *data_and_errors)
+    if verbose:
+        print "Converting data into intensity and calculating errors..."
+    dc.radiometric_calibration(meta, *data_and_errors, **kwargs)

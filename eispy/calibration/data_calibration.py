@@ -14,7 +14,9 @@ from astropy import constants
 import re
 from scipy.interpolate import UnivariateSpline
 from math import exp
-import eispy.calibration.constants as c
+from eispy.calibration.constants import missing, darts, eff_area_ver_a, \
+                                        eff_area_ver_b, eff_areas_a, \
+                                        eff_areas_b, CCD_gain, sensitivity_tau
 
 __all__ = ['interpolate_missing_pixels', 'remove_cosmic_rays',
            'correct_sensitivity', 'radiometric_calibration']
@@ -24,9 +26,14 @@ def interpolate_missing_pixels(*data_and_errors):
     """
     Interpolates missing pixels, marking them as corrected if this is the case.
     Error calculation is different when a pixel has been corrected.
+
+    Parameters
+    ----------
+    data_and_errors: one or more 3-tuples of ndarrays
+        tuples of the form (data, error, index) to be corrected
     """
     for data, err, _ in data_and_errors:
-        missing_pix = np.array(np.where(err == c.missing)).T
+        missing_pix = np.array(np.where(err == missing)).T
         ymax = err.shape[1]
         for x, y, z in missing_pix:
             y_p, y_n, n_weight = _get_neighbors(y, ymax, err, x, z)
@@ -50,7 +57,7 @@ def remove_cosmic_rays(*data_and_errors, **kwargs):
     """
     newargs = _clean_kwargs(**kwargs)
     for data, err, _ in data_and_errors:
-        slices = [asc.detect_cosmics(data[i], inmask=(err[i] == c.missing),
+        slices = [asc.detect_cosmics(data[i], inmask=(err[i] == missing),
                                      **newargs) for i in range(data.shape[0])]
         data = np.array([ccd_slice[1] for ccd_slice in slices])
 
@@ -71,7 +78,7 @@ def correct_sensitivity(meta, *data_and_errors):
                                      "%Y-%m-%dT%H:%M:%S.000")
     delta = launch - obs_start
     days = delta.days + delta.seconds / 86400
-    factor = exp(days / c.sensitivity_tau)
+    factor = exp(days / sensitivity_tau)
     for data, _, _ in data_and_errors:
         data /= factor
 
@@ -133,11 +140,11 @@ def _get_effective_areas(detector):
     Returns the effective detector areas for EIS, in a dictionary from floats
     (in Angstroms) to Quantities.
     """
-    areas_dic = c.eff_areas_a if detector == 'A' else c.eff_areas_b
+    areas_dic = eff_areas_a if detector == 'A' else eff_areas_b
     if len(areas_dic) > 0:
         return areas_dic
-    url = c.darts + 'response/EIS_EffArea_' + detector + '.'
-    url += c.eff_area_ver_a
+    url = darts + 'response/EIS_EffArea_' + detector + '.'
+    url += eff_area_ver_a if detector == 'A' else eff_area_ver_b
     urlfile = urllib.urlopen(url)
     lines = [l.strip() for l in urlfile.readlines() if l[0] != '#']
     urlfile.close()
@@ -164,7 +171,7 @@ def _conv_dn_to_number_of_photons(data_numbers, wavelengths):
     are the units the conversion expects (Sorry, no Quantities yet)
     """
     # TODO: Make this use Quantities.
-    data_numbers *= c.CCD_gain
+    data_numbers *= CCD_gain
     electrons_per_photon = 12398.5 / (wavelengths * 3.65)  # 3.65 is the energy
     # of an electron-hole in Si, and 12398.5 is the conversion from A to eV.
     data_numbers /= electrons_per_photon
@@ -205,7 +212,7 @@ def _conv_phot_int_to_radiance(photon_intensity, err, wavelengths):
     for i in range(len(wavelengths)):
         data_slice = photon_intensity[:, :, i]
         err_slice = err[:, :, i]
-        goodmask = err_slice != c.missing
+        goodmask = err_slice != missing
         data_slice *= radiance_factors[i]
         err_slice[goodmask] *= radiance_factors[i]
     photon_intensity *= radiance_factors[0].unit
