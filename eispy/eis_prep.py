@@ -31,19 +31,26 @@ __eff_areas_b__ = {}
 __CCD_gain__ = 6.93
 __pix_memo__ = {}
 __sensitivity_tau__ = 1894.0
-# TODO: errors
+# TODO: general cleanup, maybe split into different files?
 
 
 def eis_prep(filename, **kwargs):
     # TODO: Write docstring
+    # TODO: FITS output
+    # TODO: verbose?
     data_and_errors, meta = _read_fits(filename, **kwargs)
-    _remove_zeros_saturated(*data_and_errors)
-    _remove_dark_current(meta, *data_and_errors, **kwargs)
-    _calibrate_pixels(meta, *data_and_errors)
-    _interpolate_missing_pixels(*data_and_errors)
-    _remove_cosmic_rays(*data_and_errors, **kwargs)
-    _correct_sensitivity(meta, *data_and_errors)
-    _radiometric_calibration(meta, *data_and_errors)
+    if kwargs.get('zeros', True):
+        _remove_zeros_saturated(*data_and_errors)
+    if kwargs.get('darkcur', True):
+        _remove_dark_current(meta, *data_and_errors)
+    _calibrate_pixels(meta, *data_and_errors, **kwargs)
+    if kwargs.get('interp', True):
+        _interpolate_missing_pixels(*data_and_errors)
+    if kwargs.get('cosmics', True):
+        _remove_cosmic_rays(*data_and_errors, **kwargs)
+    if kwargs.get('sens', True):
+        _correct_sensitivity(meta, *data_and_errors)
+    _radiometric_calibration(meta, *data_and_errors, **kwargs)
     return data_and_errors, meta
 
 
@@ -92,7 +99,7 @@ def _remove_zeros_saturated(*data_and_errors):
         err[zeros] = __missing__
 
 
-def _remove_dark_current(meta, *data_and_errors, **kwargs):
+def _remove_dark_current(meta, *data_and_errors):
     # TODO: support 40" slot
     # TODO: support dcfiles
     """
@@ -118,7 +125,7 @@ def _remove_dark_current(meta, *data_and_errors, **kwargs):
         err[negatives] = __missing__
 
 
-def _calibrate_pixels(meta, *data_and_errors):
+def _calibrate_pixels(meta, *data_and_errors, **kwargs):
     """
     Fetches and marks as missing hot, warm and dusty pixels present in the
     observation. If there is no data available for the exact date of a
@@ -137,9 +144,8 @@ def _calibrate_pixels(meta, *data_and_errors):
         x_window = (meta['TDETX' + str(index)], (meta['TDETX' + str(index)] +
                                                  meta['TDETXW' + str(index)]))
         detector = meta['TWBND' + str(index)].lower()
-        hots = _get_pixel_map(date, 'hp', detector, y_window, x_window)
-        warms = _get_pixel_map(date, 'wp', detector, y_window, x_window)
-        dusties = _get_dusty_array(y_window, x_window)
+        hots, warms, dusties = _cal_arrays(date, detector, y_window, x_window,
+                                           data.shape[1:], **kwargs)
         locations = hots == 1
         locations[warms == 1] = True
         locations[dusties == 1] = True
@@ -204,7 +210,7 @@ def _correct_sensitivity(meta, *data_and_errors):
         data /= factor
 
 
-def _radiometric_calibration(meta, *data_and_errors):
+def _radiometric_calibration(meta, *data_and_errors, **kwargs):
     """
     Performs the radiometric calculations and conversions from data numbers to
     units of spectral radiance.
@@ -234,20 +240,9 @@ def _radiometric_calibration(meta, *data_and_errors):
         data /= u.s
         _calculate_errors(data, err, meta)
         _conv_photon_rate_to_intensity(data, wavelengths, detector, slit)
-        _conv_phot_int_to_radiance(data, wavelengths)
+        if kwargs.get('phot2int', True):
+            _conv_phot_int_to_radiance(data, wavelengths)
         data = data.to(u.erg / ((u.cm**2) * u.Angstrom * u.s * u.sr))
-
-
-def _calculate_errors(data, err, index, meta):
-    mask = err == 0
-    err[mask] = data[mask]
-    x_start = meta['TDETX' + str(index)]
-    dark_current_err = (2.26 if x_start < 1074 else
-                        2.29 if 1074 <= x_start <= 2098 else
-                        2.37 if 2098 <= x_start <= 3222 else
-                        2.24)
-    err[mask] += dark_current_err**2
-    err[mask] = np.sqrt(err[mask])
 
 
 # /===========================================================================\
@@ -440,6 +435,26 @@ def _get_pixel_map(date, pix_type, detector, y_window, x_window):
                        x_start:(x_window[1] % 2048)]
 
 
+def _cal_arrays(date, detector, y_window, x_window, shape, **kwargs):
+    """
+    Checks for keyword arguments and if some pixels are disabled, simply
+    returns a zero array for them.
+    """
+    if kwargs.get('calhp', True):
+        hots = _get_pixel_map(date, 'hp', detector, y_window, x_window)
+    else:
+        hots = np.zeros(shape)
+    if kwargs.get('calwp', True):
+        warms = _get_pixel_map(date, 'wp', detector, y_window, x_window)
+    else:
+        warms = np.zeros(shape)
+    if kwargs.get('caldp', True):
+        dusties = _get_dusty_array(y_window, x_window)
+    else:
+        dusties = np.zeros(shape)
+    return hots, warms, dusties
+
+
 # =======================    Radio calibration utils    =======================
 def _get_pixel_solid_angle(detector, slit):
     """
@@ -537,6 +552,21 @@ def _conv_phot_int_to_radiance(photon_intensity, wavelengths):
     photon_intensity *= radiance_factors[0].unit
 
 
+def _calculate_errors(data, err, index, meta):
+    """
+    Calculates the standard deviation of the data.
+    """
+    mask = err == 0
+    err[mask] = data[mask]
+    x_start = meta['TDETX' + str(index)]
+    dark_current_err = (2.26 if x_start < 1074 else
+                        2.29 if 1074 <= x_start <= 2098 else
+                        2.37 if 2098 <= x_start <= 3222 else
+                        2.24)
+    err[mask] += dark_current_err**2
+    err[mask] = np.sqrt(err[mask])
+
+
 # ========================    Interpolation utils    =========================
 def _get_neighbors(y, ymax, err, x, z):
     """
@@ -568,12 +598,12 @@ def _get_neighbors(y, ymax, err, x, z):
 def _clean_kwargs(**kwargs):
     """
     Returns a kwargs dictionary containing only the ones used by astroscrappy.
-    We have to do this because astroscrappy doesn't properly sanitize their
-    '
+    We have to do this because astroscrappy doesn't properly sanitize its
+    input
     """
-    cosmic_args = ['inmask', 'sigclip', 'sigfrac', 'onjlim', 'pssl', 'gain',
-                   'readnoise', 'satlevel', 'niter', 'sepmed', 'cleantype',
-                   'fsmode', 'psfmodel', 'psfwhm', 'psfsize', 'psfk',
-                   'psfbeta', 'verbose']
+    cosmic_args = ['sigclip', 'sigfrac', 'onjlim', 'pssl', 'gain', 'readnoise',
+                   'satlevel', 'niter', 'sepmed', 'cleantype', 'fsmode',
+                   'psfmodel', 'psfwhm', 'psfsize', 'psfk', 'psfbeta',
+                   'verbose']
     cosmic_kwargs = {k: kwargs[k] for k in kwargs if k in cosmic_args}
     return cosmic_kwargs
