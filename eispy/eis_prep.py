@@ -32,9 +32,50 @@ __CCD_gain__ = 6.93
 __pix_memo__ = {}
 __sensitivity_tau__ = 1894.0
 # TODO: general cleanup, maybe split into different files?
+# TODO: fix units
 
 
 def eis_prep(filename, **kwargs):
+    """
+    EIS prep is the main calibration method for the level 0 FITS files produced
+    by EIS. This method removes saturated and empty data points, removes dark
+    current, removes hot, warm and dusty pixels, removes cosmic rays, corrects
+    for losses in sensitivity over time, interpolates for missing data,
+    converts the data from arbitrary units into units of spectral radiance (aka
+    specific intensity), and outputs the result into a new level 1 FITS file.
+
+    There are many keyword arguments available to fine-tune the calibration.
+    Other than those detailed below, this method can take in arguments to give
+    to astropy.io.fits.open and astroscrappy.detect_cosmics. Refer to these
+    packages' documentation for a detailed explanation of the arguments
+    available.
+
+    Parameters
+    ----------
+    filename: str
+        Location of the level-0 FITS file.
+    zeros=True: bool, optional
+        If True, remove zeros and saturated data
+    darkcur=True: bool, optional
+        If True, subtract dark current from the data
+    calhp=True: bool, optional
+        If True, remove hot pixels from the data
+    calwp=True: bool, optional
+        If True, remove warm pixels from the data
+    caldp=True: bool, optional
+        If True, remove dusty pixels from the data
+    interp=True: bool, optional
+        If True, interpolate missing pixels and their errors.
+    cosmics=True: bool, optional
+        If True, remove and correct for cosmic rays
+    sens=True: bool, optional
+        If True, correct for the loss in sensitivty since launch.
+    phot2int=True: bool, optional
+        If True, set the units of the output file to be photon intensity
+        (photons*cm^-2*s^-1*A^-1*sr^-1) instead of spectral radiance - aka
+        specific intensity (erg*cm^-2*s^-1*A^-1*sr^-1). Notice that doing this
+        conversion will also change the errors to have the correct units.
+    """
     # TODO: Write docstring
     # TODO: FITS output
     # TODO: verbose?
@@ -70,7 +111,8 @@ def _read_fits(filename, **kwargs):
     filename: str
         Location of the file to be opened.
     """
-    hdulist = fits.open(filename, **kwargs)
+    memmap = kwargs.pop('memmap', True)
+    hdulist = fits.open(filename, memmap=memmap, **kwargs)
     header = dict(hdulist[1].header)
     waves = [c.name for c in hdulist[1].columns if c.dim is not None]
     data = {wav: np.array(hdulist[1].data[wav], dtype=u.Quantity)
@@ -241,7 +283,7 @@ def _radiometric_calibration(meta, *data_and_errors, **kwargs):
         _calculate_errors(data, err, meta)
         _conv_photon_rate_to_intensity(data, wavelengths, detector, slit)
         if kwargs.get('phot2int', True):
-            _conv_phot_int_to_radiance(data, wavelengths)
+            _conv_phot_int_to_radiance(data, err, wavelengths)
         data = data.to(u.erg / ((u.cm**2) * u.Angstrom * u.s * u.sr))
 
 
@@ -540,7 +582,7 @@ def _get_radiance_factor(wavelengths):
     return constants.c * constants.h / (wavelengths**2)
 
 
-def _conv_phot_int_to_radiance(photon_intensity, wavelengths):
+def _conv_phot_int_to_radiance(photon_intensity, err, wavelengths):
     """
     Converts an array containing the photon intensity of a measurement into
     spectral radiance, in units of power.area-1.time-1.wavelength-1.sr-1
@@ -548,7 +590,10 @@ def _conv_phot_int_to_radiance(photon_intensity, wavelengths):
     radiance_factors = _get_radiance_factor(wavelengths)
     for i in range(len(wavelengths)):
         data_slice = photon_intensity[:, :, i]
+        err_slice = err[:, :, i]
+        goodmask = err_slice != __missing__
         data_slice *= radiance_factors[i]
+        err_slice[goodmask] *= radiance_factors[i]
     photon_intensity *= radiance_factors[0].unit
 
 
