@@ -21,6 +21,7 @@ from astropy import constants
 import re
 from scipy.interpolate import UnivariateSpline
 from math import exp
+from eispy.version import version as eispy_version
 
 __missing__ = -100
 __darts__ = "http://darts.jaxa.jp/pub/ssw/solarb/eis/"
@@ -75,9 +76,10 @@ def eis_prep(filename, **kwargs):
         (photons*cm^-2*s^-1*A^-1*sr^-1) instead of spectral radiance - aka
         specific intensity (erg*cm^-2*s^-1*A^-1*sr^-1). Notice that doing this
         conversion will also change the errors to have the correct units.
+    institute='Unknown institute': str
+        Institute where this method is run, to write to the FITS file.
     """
-    # TODO: Write docstring
-    # TODO: FITS output
+    # TODO: FITS error output
     # TODO: verbose?
     data_and_errors, meta = _read_fits(filename, **kwargs)
     if kwargs.get('zeros', True):
@@ -224,10 +226,10 @@ def _remove_cosmic_rays(*data_and_errors, **kwargs):
     kwargs: dict-like, optional
         Extra arguments to be passed on to astroscrappy.
     """
-    kwargs = _clean_kwargs(**kwargs)
+    newkwargs = _clean_kwargs(**kwargs)
     for data, err, _ in data_and_errors:
         slices = [detect_cosmics(data[i], inmask=(err[i] == __missing__),
-                                 **kwargs) for i in range(data.shape[0])]
+                                 **newkwargs) for i in range(data.shape[0])]
         data = np.array([ccd_slice[1] for ccd_slice in slices])
 
 
@@ -265,7 +267,7 @@ def _radiometric_calibration(meta, *data_and_errors, **kwargs):
         tuples of the form (data, error, index) to be corrected
     """
     obs_start = dt.datetime.strptime(meta['DATE_OBS'],
-                                     "%Y-%m-%dT%H:%M:%S.000")
+                                     header['TDMIN' + str(index)] = data.min())
     obs_end = dt.datetime.strptime(meta['DATE_END'],
                                    "%Y-%m-%dT%H:%M:%S.000")
     total_time = (obs_end - obs_start).total_seconds()
@@ -285,6 +287,21 @@ def _radiometric_calibration(meta, *data_and_errors, **kwargs):
         if kwargs.get('phot2int', True):
             _conv_phot_int_to_radiance(data, err, wavelengths)
         data = data.to(u.erg / ((u.cm**2) * u.Angstrom * u.s * u.sr))
+
+
+def _write_to_fits(outdir, filename_in, *data_and_errors, **kwargs):
+    hdulist = fits.open(filename_in, memmap=True)
+    main_header = hdulist[0].header
+    data_header = hdulist[1].header
+    _update_header(main_header, **kwargs)
+    _update_header(data_header, **kwargs)
+    for data, _, index in data_and_errors:
+        _update_table_and_header(hdulist[1], data, index)
+    date_obs = dt.datetime.strptime(hdulist[0].header['DATE_OBS'],
+                                    "%Y-%m-%dT%H:%M:%S.000")
+    datestr = date_obs.strftime("%Y%m%d_%H%M%S")
+    filename = "eis_l1_" + datestr + ".fits"
+    hdulist.writeto(outdir + filename)
 
 
 # /===========================================================================\
@@ -652,3 +669,51 @@ def _clean_kwargs(**kwargs):
                    'verbose']
     cosmic_kwargs = {k: kwargs[k] for k in kwargs if k in cosmic_args}
     return cosmic_kwargs
+
+
+# =========================    FITS Output utils    ==========================
+def _update_header(header, **kwargs):
+    """
+    Updates the HDU header to include relevant calibration data. This does not
+    do data and data-header specific updates.
+    """
+    header['DATA_LEV'] = 1
+    header['NAXIS'] = 3
+    now = dt.datetime.now().strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3]
+    header.insert('TELESCOP', ('DATE_RF1', now,
+                               'Date and time of Level 1 reformat'))
+    header.insert('TELESCOP', ('ORIG_RF1',
+                               kwargs.get('institute', "Unknown institute"),
+                               'Institution where Level 1 reformat was done'))
+    header.insert('TELESCOP', ('VER_RF1', "EISpy version " + eispy_version,
+                               'EISpy version number'))
+    header.insert('BITC_VER', ('CAL_DC', kwargs.get('darkcur', True),
+                               "Dark current calibration"))
+    header.insert('BITC_VER', ('CAL_HP', kwargs.get('calhp', True),
+                               "Hot pixel calibration"))
+    header.insert('BITC_VER', ('CAL_DP', kwargs.get('caldp', True),
+                               "Dusty pixel calibration"))
+    header.insert('BITC_VER', ('CAL_WP', kwargs.get('calwp', True),
+                               "Warm pixel calibration"))
+    header.insert('BITC_VER', ('CAL_CR', kwargs.get('cosmics', True),
+                               "Cosmic ray calibration"))
+    header.insert('BITC_VER', ('CAL_ABS', True, "Radiometric calibration"))
+    header.insert('BITC_VER', ('CAL_PHOT', not kwargs.get('phot2int', True),
+                               "T if units in photons"))
+    header.insert('BITC_VER', ('CAL_SENS', kwargs.get('sens', True),
+                               "Sensitivity correction"))
+    header.insert('BITC_VER', ('CAL_RETA', False, "Negative values retained"))
+    header.insert('BITC_VER', ('CAL_INT', kwargs.get('interp', True),
+                               "Data interpolation done"))
+    header.insert('BITC_VER', ('TAU_SENS', __sensitivity_tau__,
+                               "Sensitivity value used"))
+    del header['CAL_FF']
+    del header['CAL_WVL']
+
+
+def _update_table_and_header(hdu, data, index):
+    header = hdu.header
+    name = hdu.columns[index - 1].name
+    hdu.data[name] = data
+    header['TDMIN' + str(index)] = data.min()
+    header['TDMAX' + str(index)] = data.max()
