@@ -21,3 +21,4 @@ except ImportError:
     __githash__ = ''
 
 from eispy import eis_cube, eis_spectral_cube, eis_utils
+from eispy.calibration import eis_prep
