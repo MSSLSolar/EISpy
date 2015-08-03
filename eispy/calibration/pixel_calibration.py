@@ -87,7 +87,7 @@ def calibrate_pixels(meta, *data_and_errors, **kwargs):
         locations = hots == 1
         locations[warms == 1] = True
         locations[dusties == 1] = True
-        for x_slice in range(err.size[0]):
+        for x_slice in range(err.shape[0]):
             err[x_slice][locations] = missing
             data[x_slice][locations] = 0
 

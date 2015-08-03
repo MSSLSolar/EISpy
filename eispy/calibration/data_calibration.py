@@ -109,7 +109,8 @@ def radiometric_calibration(meta, *data_and_errors, **kwargs):
         data /= seconds_per_exposure
         data /= u.s
         _calculate_errors(data, err, index, meta)
-        _conv_photon_rate_to_intensity(data, wavelengths, detector, slit)
+        err /= u.s
+        _conv_photon_rate_to_intensity(data, err, wavelengths, detector, slit)
         if kwargs.get('phot2int', True):
             _conv_phot_int_to_radiance(data, err, wavelengths)
         data = data.to(u.erg / ((u.cm**2) * u.Angstrom * u.s * u.sr))
@@ -178,8 +179,8 @@ def _conv_dn_to_number_of_photons(data_numbers, wavelengths):
     return data_numbers
 
 
-def _conv_photon_rate_to_intensity(photons_per_second, wavelengths, detector,
-                                   slit):
+def _conv_photon_rate_to_intensity(photons_per_second, err, wavelengths,
+                                   detector, slit):
     """
     Converts an array containing the rate of photon incidence into an array of
     photons.cm-2.s-1.sr-1. Wavelengths should be floats, in Angstroms.
@@ -190,8 +191,8 @@ def _conv_photon_rate_to_intensity(photons_per_second, wavelengths, detector,
     for wav in range(len(areas)):
         data_slice = photons_per_second[:, :, wav]
         data_slice /= areas[wav]
-    photons_per_second /= areas[0].unit
-    photons_per_second /= u.sr
+    photons_per_second /= (areas[0].unit * u.sr)
+    err /= (areas[0].unit * u.sr)
 
 
 def _get_radiance_factor(wavelengths):
@@ -214,7 +215,9 @@ def _conv_phot_int_to_radiance(photon_intensity, err, wavelengths):
         err_slice = err[:, :, i]
         goodmask = err_slice != missing
         data_slice *= radiance_factors[i]
-        err_slice[goodmask] *= radiance_factors[i]
+        err_slice *= radiance_factors[i]
+        err_slice[goodmask] = missing * data_slice[0, 0].unit
+    err *= radiance_factors[0].unit
     photon_intensity *= radiance_factors[0].unit
 
 

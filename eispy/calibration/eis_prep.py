@@ -72,7 +72,7 @@ def eis_prep(filename, **kwargs):
     data_and_errors, meta = io.read_fits(filename, **kwargs)
     _pixel_calibration(meta, *data_and_errors, **kwargs)
     _data_calibration(meta, *data_and_errors, **kwargs)
-    outdir = kwargs.get('outdir', None)
+    outdir = kwargs.pop('outdir', None)
     if outdir is not None:
         if verbose:
             print "Done! Writing to file..."

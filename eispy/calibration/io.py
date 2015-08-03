@@ -65,11 +65,11 @@ def write_to_fits(outdir, filename_in, *data_and_errors, **kwargs):
                                     "%Y-%m-%dT%H:%M:%S.000")
     datestr = date_obs.strftime("%Y%m%d_%H%M%S")
     filename = "eis_l1_" + datestr + ".fits"
-    hdulist.writeto(outdir + filename)
+    hdulist.writeto(outdir + filename, output_verify='silentfix+warn')
     for _, err, index in data_and_errors:
         _update_table_and_header(hdulist[1], err, index)
     filename = "eis_er_" + datestr + ".fits"
-    hdulist.writeto(outdir + filename)
+    hdulist.writeto(outdir + filename, output_verify='silentfix+ignore')
 
 
 # =========================    FITS Output utils    ==========================
@@ -81,6 +81,7 @@ def _update_header(header, **kwargs):
     header['DATA_LEV'] = 1
     header['NAXIS'] = 3
     now = dt.datetime.now().strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3]
+    _delete_cards(header)
     header.insert('TELESCOP', ('DATE_RF1', now,
                                'Date and time of Level 1 reformat'))
     header.insert('TELESCOP', ('ORIG_RF1',
@@ -108,8 +109,14 @@ def _update_header(header, **kwargs):
                                "Data interpolation done"))
     header.insert('BITC_VER', ('TAU_SENS', sensitivity_tau,
                                "Sensitivity value used"))
-    del header['CAL_FF']
-    del header['CAL_WVL']
+
+
+def _delete_cards(header):
+    cards = ['DATE_RF1', 'ORIG_RF1', 'VER_RF1', 'CAL_DC', 'CAL_HP', 'CAL_WP',
+             'CAL_DP', 'CAL_CR', 'CAL_ABS', 'CAL_PHOT', 'CAL_SENS', 'CAL_RETA',
+             'CAL_INT', 'TAU_SENS', 'CAL_FF', 'CAL_WVL']
+    for c in cards:
+        header.pop(c, None)
 
 
 def _update_table_and_header(hdu, data, index):
