@@ -12,7 +12,7 @@ import urllib
 from astropy import units as u
 from astropy import constants
 import re
-from scipy.interpolate import UnivariateSpline
+from scipy.interpolate import interp1d
 from math import exp
 from eispy.calibration.constants import missing, darts, eff_area_ver_a, \
                                         eff_area_ver_b, eff_areas_a, \
@@ -161,7 +161,7 @@ def _get_eff_area_at_wl(detector, wavelengths):
     Wavelengths should be floats, in Angstroms.
     """
     dic = _get_effective_areas(detector)
-    spl = UnivariateSpline(dic.keys(), dic.values())
+    spl = interp1d(dic.keys(), dic.values(), kind='cubic')
     return spl(wavelengths) * u.cm**2
 
 
