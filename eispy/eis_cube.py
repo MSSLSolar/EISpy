@@ -5,6 +5,7 @@
 from __future__ import absolute_import
 
 from astropy.io import fits
+from astropy.nddata import StdDevUncertainty as sdu
 from sunpy.wcs.wcs import WCS
 from sunpycube.cube.datacube import Cube
 from sunpycube.cube import cube_utils as cu
@@ -12,6 +13,7 @@ from sunpy.wcs import wcs_util as wu
 import numpy as np
 from sunpycube.spectra.spectrum import Spectrum
 from eispy.eis_spectral_cube import EISSpectralCube
+from eispy.calibration.constants import missing
 import re
 
 __all__ = ['EISCube']
@@ -41,7 +43,7 @@ class EISCube(Cube):
     For an overview of the mission
     http://solarb.mssl.ucl.ac.uk/SolarB/
     '''
-    def __init__(self, data, wcs, header=None):
+    def __init__(self, data, wcs, header, errors=None):
         '''
         Constructor function.
 
@@ -57,32 +59,40 @@ class EISCube(Cube):
             The main header for the whole file.
         '''
         wcs = WCS(header=header, naxis=3)
-        Cube.__init__(self, data, wcs, meta=header)
+        mask = errors == missing if errors is not None else None
+        Cube.__init__(self, data, wcs, mask=mask, uncertainty=errors,
+                      meta=header)
         # Data is transposed here because EIS orders (y, lambda) by x or time,
         # not (y, x) by lambda.
 
     @classmethod
-    def read(cls, filename, **kwargs):
+    def read(cls, filename, er_filename=None, **kwargs):
         """ Reads in a given FITS file and returns a dictionary of new
         EISSpectralCubes. Additional parameters are given to fits.open.
 
         Parameters
         ----------
-        filename : string
+        filename: string
             Complete location of the FITS file
+        er_filename: string
+            Location of the error FITS file
         """
         hdulist = fits.open(name=filename, **kwargs)
+        errlist = fits.open(er_filename) if er_filename is not None else None
         header = _clean(hdulist[0].header)
         # TODO: Make sure each cube has a correct wcs.
         wavelengths = [c.name for c in hdulist[1].columns if c.dim is not None]
         data = [hdulist[1].data[wav] for wav in wavelengths]
+        errs = [errlist[1].data[wav] if errlist is not None else None
+                for wav in wavelengths]
         cubes = []
         for i in range(len(data)):
             window = i + 1
             header = _dictionarize_header(hdulist[1].header, hdulist[0].header,
                                           window)
             wcs = WCS(header=header, naxis=3)
-            cubes += [EISCube(data[i], wcs, header)]
+            uncertainty = sdu(errs[i]) if errlist is not None else None
+            cubes += [EISCube(data[i], wcs, header, errors=uncertainty)]
         return dict(zip(wavelengths, cubes))
 
     @classmethod

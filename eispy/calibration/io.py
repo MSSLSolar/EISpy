@@ -65,11 +65,11 @@ def write_to_fits(outdir, filename_in, *data_and_errors, **kwargs):
                                     "%Y-%m-%dT%H:%M:%S.000")
     datestr = date_obs.strftime("%Y%m%d_%H%M%S")
     filename = "eis_l1_" + datestr + ".fits"
-    hdulist.writeto(outdir + filename, output_verify='silentfix+warn')
+    hdulist.writeto(outdir + filename, output_verify='fix+warn')
     for _, err, index in data_and_errors:
         _update_table_and_header(hdulist[1], err, index)
     filename = "eis_er_" + datestr + ".fits"
-    hdulist.writeto(outdir + filename, output_verify='silentfix+ignore')
+    hdulist.writeto(outdir + filename, output_verify='fix+ignore')
 
 
 # =========================    FITS Output utils    ==========================
@@ -128,3 +128,6 @@ def _update_table_and_header(hdu, data, index):
     hdu.data[name] = data
     header['TDMIN' + str(index)] = data.min()
     header['TDMAX' + str(index)] = data.max()
+    form = header['TFORM' + str(index)]
+    form = form[:-1] + 'E'
+    header['TFORM' + str(index)] = form
