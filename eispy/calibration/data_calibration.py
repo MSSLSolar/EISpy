@@ -6,6 +6,7 @@ This module deals with the data-wise interpolation, calibration and correction
 for eis_prep
 """
 import numpy as np
+from eispy import eis_utils as eu
 import datetime as dt
 import astroscrappy as asc
 import urllib
@@ -100,7 +101,9 @@ def radiometric_calibration(meta, *data_and_errors, **kwargs):
     obs_end = dt.datetime.strptime(meta['DATE_END'],
                                    "%Y-%m-%dT%H:%M:%S.000")
     total_time = (obs_end - obs_start).total_seconds()
-    for data, err, index in data_and_errors:
+    der = list(data_and_errors)
+    for i in range(len(data_and_errors)):
+        data, err, index = data_and_errors[i]
         wavelengths = _get_wavelengths(meta, index, data.shape[2])
         detector = meta['TWBND' + str(index)]
         slit = 2 if meta['SLIT_IND'] == 2 else 0  # 1" slit has index 0
@@ -114,6 +117,8 @@ def radiometric_calibration(meta, *data_and_errors, **kwargs):
         if kwargs.get('phot2int', True):
             _conv_phot_int_to_radiance(data, err, wavelengths)
         data = data.to(u.erg / ((u.cm**2) * u.Angstrom * u.s * u.sr))
+        der[i] = (data, err, index)
+    return der
 
 
 # /===========================================================================\
@@ -201,7 +206,9 @@ def _get_radiance_factor(wavelengths):
     spectral radiance.
     """
     wavelengths *= u.Angstrom
-    return constants.c * constants.h / (wavelengths**2)
+    dispersion = [eu.calc_dispersion(wav) for wav in wavelengths]
+    dispersion *= u.Angstrom
+    return constants.c * constants.h / (wavelengths * dispersion)
 
 
 def _conv_phot_int_to_radiance(photon_intensity, err, wavelengths):
@@ -213,10 +220,10 @@ def _conv_phot_int_to_radiance(photon_intensity, err, wavelengths):
     for i in range(len(wavelengths)):
         data_slice = photon_intensity[:, :, i]
         err_slice = err[:, :, i]
-        goodmask = err_slice != missing
+        badmask = err_slice == missing
         data_slice *= radiance_factors[i]
         err_slice *= radiance_factors[i]
-        err_slice[goodmask] = missing * data_slice[0, 0].unit
+        err_slice[badmask] = missing * data_slice[0, 0].unit
     err *= radiance_factors[0].unit
     photon_intensity *= radiance_factors[0].unit
 

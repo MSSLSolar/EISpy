@@ -126,8 +126,8 @@ def _update_table_and_header(hdu, data, index):
     header = hdu.header
     name = hdu.columns[index - 1].name
     hdu.data[name] = data
-    header['TDMIN' + str(index)] = data.min()
-    header['TDMAX' + str(index)] = data.max()
+    header['TDMIN' + str(index)] = data.min().value
+    header['TDMAX' + str(index)] = data.max().value
     form = header['TFORM' + str(index)]
     form = form[:-1] + 'E'
     header['TFORM' + str(index)] = form

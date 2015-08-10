@@ -71,7 +71,7 @@ def eis_prep(filename, **kwargs):
         print "Reading file..."
     data_and_errors, meta = io.read_fits(filename, **kwargs)
     _pixel_calibration(meta, *data_and_errors, **kwargs)
-    _data_calibration(meta, *data_and_errors, **kwargs)
+    data_and_errors = _data_calibration(meta, *data_and_errors, **kwargs)
     outdir = kwargs.pop('outdir', None)
     if outdir is not None:
         if verbose:
@@ -119,4 +119,6 @@ def _data_calibration(meta, *data_and_errors, **kwargs):
         dc.correct_sensitivity(meta, *data_and_errors)
     if verbose:
         print "Converting data into intensity and calculating errors..."
-    dc.radiometric_calibration(meta, *data_and_errors, **kwargs)
+    data_and_errors = dc.radiometric_calibration(meta, *data_and_errors,
+                                                 **kwargs)
+    return data_and_errors
