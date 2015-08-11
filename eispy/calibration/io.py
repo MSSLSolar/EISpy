@@ -59,17 +59,23 @@ def write_to_fits(outdir, filename_in, *data_and_errors, **kwargs):
     data_header = hdulist[1].header
     _update_header(main_header, **kwargs)
     _update_header(data_header, **kwargs)
-    for data, _, index in data_and_errors:
-        _update_table_and_header(hdulist[1], data, index)
-    date_obs = dt.datetime.strptime(hdulist[0].header['DATE_OBS'],
-                                    "%Y-%m-%dT%H:%M:%S.000")
-    datestr = date_obs.strftime("%Y%m%d_%H%M%S")
-    filename = "eis_l1_" + datestr + ".fits"
-    hdulist.writeto(outdir + filename, output_verify='fix+warn')
-    for _, err, index in data_and_errors:
-        _update_table_and_header(hdulist[1], err, index)
-    filename = "eis_er_" + datestr + ".fits"
-    hdulist.writeto(outdir + filename, output_verify='fix+ignore')
+    win = len(data_and_errors)
+    data_columns = [_get_column(hdulist[1], data, index)
+                    for data, _, index in data_and_errors]
+    err_columns = [_get_column(hdulist[1], err, index)
+                   for _, err, index in data_and_errors]
+    data_cdefs = fits.ColDefs(data_columns + list(hdulist[1].columns[win:]))
+    err_cdefs = fits.ColDefs(err_columns)
+    newdatahdu = fits.BinTableHDU.from_columns(data_cdefs, header=data_header)
+    newerrhdu = fits.BinTableHDU.from_columns(err_cdefs, header=data_header)
+    for data, error, index in data_and_errors:
+        _clean_data_header(newdatahdu.header, data, index)
+        _clean_data_header(newerrhdu.header, err, index)
+    dataoutlist = fits.HDUList([hdulist[0], newdatahdu])
+    erroutlist = fits.HDUList([hdulist[0], newerrhdu])
+    clobber = kwargs.pop('clobber', True)
+    dataoutlist.writeto(outdir + _filename(main_header, 'l1'), clobber=clobber)
+    erroutlist.writeto(outdir + _filename(main_header, 'er'), clobber=clobber)
 
 
 # =========================    FITS Output utils    ==========================
@@ -119,15 +125,31 @@ def _delete_cards(header):
         header.pop(c, None)
 
 
-def _update_table_and_header(hdu, data, index):
+def _get_column(hdu, data, index):
     """
-    Updates the table and header values of the data HDU.
+    Updates the table and header values of the data HDU, and returns a new FITS
+    Column object
     """
-    header = hdu.header
     name = hdu.columns[index - 1].name
-    hdu.data[name] = data
+    col = fits.Column(name=name, array=data, dim=str(data.shape[-1:0:-1]),
+                      format=str(data.shape[1] * data.shape[2]) + 'E',
+                      unit=data[0, 0, 0].unit.to_string('cds'))
+    return col
+
+
+def _clean_data_header(header, data, index):
+    """
+    Updates the min and max values in the new header.
+    """
     header['TDMIN' + str(index)] = data.min().value
     header['TDMAX' + str(index)] = data.max().value
-    form = header['TFORM' + str(index)]
-    form = form[:-1] + 'E'
-    header['TFORM' + str(index)] = form
+
+
+def _filename(header, filetype):
+    """
+    Returns the filename of the new file
+    """
+    date = dt.datetime.strptime(header['DATE_OBS'], "%Y-%m-%dT%H:%M:%S.000")
+    datestr = date.strftime("%Y%m%d_%H%M%S")
+    filename = "eis_" + filetype + "_" + datestr + ".fits"
+    return filename
