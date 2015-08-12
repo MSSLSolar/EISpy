@@ -4,24 +4,25 @@
 """
 Utilities used in EIS calculations, corrections and fits.
 """
+import os
+import datetime as dt
+import warnings
+import urllib
 
 from scipy.io import readsav
 from scipy.interpolate import interp1d
 import numpy as np
-import datetime as dt
-import warnings
-import sunpy
-import urllib
-from math import sqrt
 import astropy.constants as const
 from astropy import units as u
+import sunpy
+
 
 __housekeeping_memo__ = {}
-__dispersion_long__ = 0.022332  # Constant value for long wavelength
-__dispersion_short__ = 0.022317  # Constant value for short wavelength
-__disp_sq_long__ = -1.329e-8  # Quadratic term, long wavelength
-__disp_sq_short__ = -1.268e-8  # Quadratic term, short wavelength
-
+ # Constant and quadratic term values for long and short wavelengths
+__detector__ = {'LONG': {'refwvl': 199.9389,
+                         'dispersion' : 0.022332, 'dispersion_sq' : -1.329e-8},
+                'SHORT': {'refwvl': 166.131,
+                          'dispersion': 0.022317, 'dispersion_sq' : -1.268e-8}}
 
 def get_dict_from_file(date, prefix="eis3"):
     """
@@ -40,18 +41,16 @@ def get_dict_from_file(date, prefix="eis3"):
     prefix: str
         file prefix (eis3 for thermal correction, fpp1 for doppler shift)
     """
-    key = date.year * 100 + date.month
-    key = prefix + "_" + str(key)
+    key = '{0}_{1:%Y%m}.sav'.format(prefix, date)
     if key in __housekeeping_memo__:
         file_dict = __housekeeping_memo__[key]
     else:
-        # TODO: Do this properly, using os path join.
-        download_dir = sunpy.util.config._get_home()
-        download_dir += "/EISpy/eispy/data/" + key + ".sav"
+        download_dir = os.path.join(sunpy.util.config._get_home(),
+                                    'EISpy', 'eispy', 'data', key)
         try:
             file_dict = readsav(download_dir, python_dict=True)
         except IOError:
-            url = "http://sdc.uio.no/eis_wave_corr_hk_data/" + key + ".sav"
+            url = "http://sdc.uio.no/eis_wave_corr_hk_data/" + key
             urllib.urlretrieve(url, filename=download_dir)
             file_dict = readsav(download_dir, python_dict=True)
             warnings.warn("File was not found, so it was downloaded and " +
@@ -140,46 +139,46 @@ def _get_corr_parameters(sswtime):
     adj3 = datetime_to_ssw_time(dt.datetime(2008, 10, 21, 8, 00, 00))
 
     if sswtime < adj1:
-        correction_arr = np.array([4.10562e-01, 2.51204e+00, -7.03979e-01,
-                                   1.21183e+00, -1.46165e+00, -2.03801e+00,
-                                   -5.09189e+00, -3.31613e+00, 2.28654e-01,
-                                   3.72455e+00, 8.19741e-01, 1.17212e+00,
-                                   3.19226e+00, 2.21462e+00, -2.76307e+00,
-                                   -7.75230e+00, 2.27707e+00, 8.62746e-02,
-                                   -3.87772e+00, 8.50736e-01, 2.50457e-01,
+        correction_arr = np.array([ 4.10562e-01,  2.51204e+00, -7.03979e-01,
+                                    1.21183e+00, -1.46165e+00, -2.03801e+00,
+                                   -5.09189e+00, -3.31613e+00,  2.28654e-01,
+                                    3.72455e+00,  8.19741e-01,  1.17212e+00,
+                                    3.19226e+00,  2.21462e+00, -2.76307e+00,
+                                   -7.75230e+00,  2.27707e+00,  8.62746e-02,
+                                   -3.87772e+00,  8.50736e-01,  2.50457e-01,
                                    -4.62109e+00, -1.49986e+00, -9.98911e-01,
-                                   -5.24012e+00, -4.88090e+00, 8.41629e-01,
-                                   1.53231e+00, -5.56888e+00, 5.46359e+00,
-                                   5.00476e+00, 6.83911e+00, 2.10491e+00,
-                                   6.89056e+00])
+                                   -5.24012e+00, -4.88090e+00,  8.41629e-01,
+                                    1.53231e+00, -5.56888e+00,  5.46359e+00,
+                                    5.00476e+00,  6.83911e+00,  2.10491e+00,
+                                    6.89056e+00])
         pixel_ref = 1.34524e+3
     elif adj1 < sswtime < adj2:
-        correction_arr = np.array([-7.60169e+00, -1.46383e+00, 3.64224e+00,
-                                   6.22838e+00, 1.02071e+00, -5.87856e+00,
+        correction_arr = np.array([-7.60169e+00, -1.46383e+00,  3.64224e+00,
+                                    6.22838e+00,  1.02071e+00, -5.87856e+00,
                                    -7.07813e+00, -3.29145e+00, -2.68002e+00,
-                                   6.44214e+00, -5.64250e+00, 9.41400e+00,
-                                   1.02490e+01, 1.00514e+00, 1.54987e+01,
-                                   -2.43897e+01, 6.93774e+00, 7.99804e+00,
-                                   -4.24839e+00, 1.94191e+00, -4.11472e+00,
-                                   2.67682e+00, 2.63193e+00, -1.58034e+00,
+                                    6.44214e+00, -5.64250e+00,  9.41400e+00,
+                                    1.02490e+01,  1.00514e+00,  1.54987e+01,
+                                   -2.43897e+01,  6.93774e+00,  7.99804e+00,
+                                   -4.24839e+00,  1.94191e+00, -4.11472e+00,
+                                    2.67682e+00,  2.63193e+00, -1.58034e+00,
                                    -1.36976e+01, -1.78314e+00, -3.97698e+00,
-                                   -5.86437e+00, 2.30465e+00, 1.23473e+01,
-                                   -1.35947e+00, 1.85987e+00, 4.27904e+00,
+                                   -5.86437e+00,  2.30465e+00,  1.23473e+01,
+                                   -1.35947e+00,  1.85987e+00,  4.27904e+00,
                                    -4.35809e+00])
         pixel_ref = 1.34915e+3
     else:
-        correction_arr = np.array([-9.69118e-01, 2.12159e+00, -2.99428e+00,
-                                   2.61100e+00, 1.41035e+00, -9.76397e-01,
-                                   -1.61651e+01, -9.94312e-01, 1.04603e+00,
-                                   8.57033e-01, 2.07951e+00, 4.80522e+00,
-                                   8.65133e+00, -2.37848e-02, 1.09901e+00,
-                                   -5.51204e+00, 1.58325e+00, 1.97708e+00,
-                                   -3.42620e+00, 1.76606e+00, 6.50817e+00,
+        correction_arr = np.array([-9.69118e-01,  2.12159e+00, -2.99428e+00,
+                                    2.61100e+00,  1.41035e+00, -9.76397e-01,
+                                   -1.61651e+01, -9.94312e-01,  1.04603e+00,
+                                    8.57033e-01,  2.07951e+00,  4.80522e+00,
+                                    8.65133e+00, -2.37848e-02,  1.09901e+00,
+                                   -5.51204e+00,  1.58325e+00,  1.97708e+00,
+                                   -3.42620e+00,  1.76606e+00,  6.50817e+00,
                                    -7.19983e+00, -3.21551e+00, -6.81840e-01,
                                    -5.75801e+00, -1.08458e-01, -3.76701e+00,
-                                   -3.05294e+00, -4.01884e+00, 1.00570e+01,
-                                   4.61089e-01, 6.69429e+00, -6.84122e-01,
-                                   4.38880e+00])
+                                   -3.05294e+00, -4.01884e+00,  1.00570e+01,
+                                    4.61089e-01,  6.69429e+00, -6.84122e-01,
+                                    4.38880e+00])
         pixel_ref = 1.34281e+3
         pixel_ref += 4.88 if adj2 < sswtime < adj3 else 0
     return correction_arr, pixel_ref
@@ -193,7 +192,7 @@ def calc_hk_thermal_corrections(times, slit2=False):
 
     Parameters
     ----------
-    times: numpy array of datetime objects
+    times: numpy array of datetime objects # TODO why numpy array? not a list?
         Times the observations occurred
     slit2: boolean
         Whether the observation was made using the 2" slit
@@ -294,10 +293,9 @@ def calc_dispersion(wavelength):
         The wavelength at which to calculate dispersion
     """
     ccd_pix = wavelength_to_ccd_pixel(wavelength)
-    if wavelength > 230 * u.Angstrom:  # Long lambda detector
-        return __dispersion_long__ + __disp_sq_long__ * ccd_pix
-    else:
-        return __dispersion_short__ + __disp_sq_short__ * ccd_pix
+    band = 'LONG' if wavelength > 230 * u.Angstrom else 'SHORT'
+    detector = __detector__[band]
+    return detector['dispersion'] + detector['dispersion_sq'] * ccd_pix
 
 
 def wavelength_to_ccd_pixel(wavelength):
@@ -309,34 +307,20 @@ def wavelength_to_ccd_pixel(wavelength):
     wavelength: Astropy Quantity
         The wavelength to convert
     """
-    if wavelength > 230 * u.Angstrom:
-        refwvl = 199.9389
-        displin = __dispersion_long__
-        dispsq = __disp_sq_long__
-    else:
-        refwvl = 166.131
-        displin = __dispersion_short__
-        dispsq = __disp_sq_short__
-    pixel = refwvl - (wavelength.to(u.Angstrom)).value
-    pixel *= 4 * dispsq
-    pixel = sqrt(displin**2 - pixel)
-    pixel -= displin
+    band = 'LONG' if wavelength > 230 * u.Angstrom else 'SHORT'
+    detector = __detector__[band]
+    pixel = detector['refwvl'] - (wavelength.to(u.Angstrom)).value
+    pixel *= 4 * detector['dispersion_sq']
+    pixel = np.sqrt(detector['dispersion']**2 - pixel)
+    pixel -= detector['dispersion']
     pixel /= 2
-    pixel /= dispsq
+    pixel /=  detector['dispersion_sq']
     return pixel
 
 
 def ccd_pixel_to_wavelength(pixel, band):
-    if band == 'LONG':
-        refwvl = 199.9389
-        displin = __dispersion_long__
-        dispsq = __disp_sq_long__
-    else:
-        refwvl = 166.131
-        displin = __dispersion_short__
-        dispsq = __disp_sq_short__
-    return refwvl + displin * pixel + dispsq * pixel**2
-
+    detector = __detector__[band]
+    return detector['refwvl'] + detector['dispersion'] * pixel + detector['dispersion_sq'] * pixel**2
 
 def calc_doppler_shift(times):
     """
@@ -356,6 +340,6 @@ def calc_doppler_shift(times):
     fpp_times = np.array(fpp_dict['time'])
     data_at_times_wanted_fun = interp1d(fpp_times, data)
     data_at_times_wanted = data_at_times_wanted_fun(ssw_times)
-    dispersion = calc_dispersion(195.12 * u.Angstrom)  # FeXII line
+    dispersion = calc_dispersion(195.12 * u.Angstrom)  # FeXII line # todo: check units
     doppler_shift = data_at_times_wanted / const.c.value * 195.12 / dispersion
     return doppler_shift
