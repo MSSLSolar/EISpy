@@ -8,9 +8,9 @@ damaged data, and calculates the 1-sigma errors of the good data.
 """
 
 from __future__ import absolute_import
-from . import io
-from . import pixel_calibration as pc
-from . import data_calibration as dc
+from eispy.calibration import io
+from eispy.calibration import pixel_calibration as pc
+from eispy.calibration import data_calibration as dc
 
 
 __all__ = ['eis_prep']

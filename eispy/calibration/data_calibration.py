@@ -21,6 +21,7 @@ from eispy.calibration.constants import missing, darts, eff_area_ver_a, \
 
 __all__ = ['interpolate_missing_pixels', 'remove_cosmic_rays',
            'correct_sensitivity', 'radiometric_calibration']
+rad_unit = u.erg / ((u.cm**2) * u.Angstrom * u.s * u.sr)
 
 
 def interpolate_missing_pixels(*data_and_errors):
@@ -104,19 +105,24 @@ def radiometric_calibration(meta, *data_and_errors, **kwargs):
     der = list(data_and_errors)
     for i in range(len(data_and_errors)):
         data, err, index = data_and_errors[i]
+        mask = err == missing
         wavelengths = _get_wavelengths(meta, index, data.shape[2])
         detector = meta['TWBND' + str(index)]
         slit = 2 if meta['SLIT_IND'] == 2 else 0  # 1" slit has index 0
         _conv_dn_to_number_of_photons(data, wavelengths)
+        err = np.array(data, dtype=float)
         seconds_per_exposure = total_time / data.shape[0]
+        err = _calculate_errors(data, err, index, meta)
         data /= seconds_per_exposure
         data /= u.s
-        _calculate_errors(data, err, index, meta)
+        err /= seconds_per_exposure
         err /= u.s
         _conv_photon_rate_to_intensity(data, err, wavelengths, detector, slit)
         if kwargs.get('phot2int', True):
             _conv_phot_int_to_radiance(data, err, wavelengths)
-        data = data.to(u.erg / ((u.cm**2) * u.Angstrom * u.s * u.sr))
+        data = data.to(rad_unit)
+        err = err.to(rad_unit)
+        err[mask] = missing * rad_unit
         der[i] = (data, err, index)
     return der
 
@@ -193,9 +199,12 @@ def _conv_photon_rate_to_intensity(photons_per_second, err, wavelengths,
     pix_solid_angle = _get_pixel_solid_angle(detector, slit)
     areas = _get_eff_area_at_wl(detector, wavelengths)
     photons_per_second /= pix_solid_angle
+    err /= pix_solid_angle
     for wav in range(len(areas)):
         data_slice = photons_per_second[:, :, wav]
         data_slice /= areas[wav]
+        err_slice = err[:, :, wav]
+        err_slice /= areas[wav]
     photons_per_second /= (areas[0].unit * u.sr)
     err /= (areas[0].unit * u.sr)
 
@@ -220,10 +229,8 @@ def _conv_phot_int_to_radiance(photon_intensity, err, wavelengths):
     for i in range(len(wavelengths)):
         data_slice = photon_intensity[:, :, i]
         err_slice = err[:, :, i]
-        badmask = err_slice == missing
         data_slice *= radiance_factors[i]
         err_slice *= radiance_factors[i]
-        err_slice[badmask] = missing * data_slice[0, 0].unit
     err *= radiance_factors[0].unit
     photon_intensity *= radiance_factors[0].unit
 
@@ -232,15 +239,14 @@ def _calculate_errors(data, err, index, meta):
     """
     Calculates the standard deviation of the data.
     """
-    mask = err == 0
-    err[mask] = data[mask]
     x_start = meta['TDETX' + str(index)]
     dark_current_err = (2.26 if x_start < 1074 else
                         2.29 if 1074 <= x_start <= 2098 else
                         2.37 if 2098 <= x_start <= 3222 else
                         2.24)
-    err[mask] += dark_current_err**2
-    err[mask] = np.sqrt(err[mask])
+    err += dark_current_err**2
+    err = np.sqrt(err)
+    return err
 
 
 def _get_wavelengths(meta, index, size):
