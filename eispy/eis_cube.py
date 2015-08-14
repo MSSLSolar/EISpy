@@ -59,8 +59,8 @@ class EISCube(Cube):
             The main header for the whole file.
         '''
         wcs = WCS(header=header, naxis=3)
-        mask = errors == missing if errors is not None else None
-        Cube.__init__(self, data, wcs, mask=mask, uncertainty=errors,
+        mask = (errors.array == missing if errors is not None else None)
+        Cube.__init__(self, data, wcs, mask=mask, errors=errors,
                       meta=header)
         # Data is transposed here because EIS orders (y, lambda) by x or time,
         # not (y, x) by lambda.

@@ -5,6 +5,8 @@
 This module handles file IO for eis_prep.
 """
 import numpy as np
+import warnings
+import re
 from astropy.io import fits
 from astropy import units as u
 import datetime as dt
@@ -29,6 +31,8 @@ def read_fits(filename, **kwargs):
     """
     memmap = kwargs.pop('memmap', True)
     hdulist = fits.open(filename, memmap=memmap, **kwargs)
+    _remove_unreadable_cards(hdulist[0].header)
+    _remove_unreadable_cards(hdulist[1].header)
     header = dict(hdulist[1].header)
     waves = [c.name for c in hdulist[1].columns if c.dim is not None]
     data = {wav: np.array(hdulist[1].data[wav], dtype=u.Quantity)
@@ -57,6 +61,8 @@ def write_to_fits(outdir, filename_in, *data_and_errors, **kwargs):
     hdulist = fits.open(filename_in, memmap=True)
     main_header = hdulist[0].header
     data_header = hdulist[1].header
+    _remove_unreadable_cards(main_header)
+    _remove_unreadable_cards(data_header)
     _update_header(main_header, **kwargs)
     _update_header(data_header, **kwargs)
     win = len(data_and_errors)
@@ -68,14 +74,18 @@ def write_to_fits(outdir, filename_in, *data_and_errors, **kwargs):
     err_cdefs = fits.ColDefs(err_columns)
     newdatahdu = fits.BinTableHDU.from_columns(data_cdefs, header=data_header)
     newerrhdu = fits.BinTableHDU.from_columns(err_cdefs, header=data_header)
+    _remove_unreadable_cards(newdatahdu.header)
+    _remove_unreadable_cards(newerrhdu.header)
     for data, error, index in data_and_errors:
-        _clean_data_header(newdatahdu.header, data, index)
-        _clean_data_header(newerrhdu.header, err, index)
+        _clean_data_header(newdatahdu, hdulist[1], data, index)
+        _clean_data_header(newerrhdu, hdulist[1], err, index)
     dataoutlist = fits.HDUList([hdulist[0], newdatahdu])
     erroutlist = fits.HDUList([hdulist[0], newerrhdu])
     clobber = kwargs.pop('clobber', True)
-    dataoutlist.writeto(outdir + _filename(main_header, 'l1'), clobber=clobber)
-    erroutlist.writeto(outdir + _filename(main_header, 'er'), clobber=clobber)
+    dataoutlist.writeto(outdir + _filename(main_header, 'l1'), clobber=clobber,
+                        output_verify='ignore')
+    erroutlist.writeto(outdir + _filename(main_header, 'er'), clobber=clobber,
+                       output_verify='ignore')
 
 
 # =========================    FITS Output utils    ==========================
@@ -137,12 +147,22 @@ def _get_column(hdu, data, index):
     return col
 
 
-def _clean_data_header(header, data, index):
+def _clean_data_header(newhdu, oldhdu, data, oldindex):
     """
     Updates the min and max values in the new header.
     """
-    header['TDMIN' + str(index)] = data.min().value
-    header['TDMAX' + str(index)] = data.max().value
+    newheader = newhdu.header
+    oldheader = oldhdu.header
+    oldnames = oldhdu.columns.names
+    newindex = newhdu.columns.names.index(oldnames[oldindex - 1]) + 1
+    newheader['TDMIN' + str(newindex)] = data.min().value
+    newheader['TDMAX' + str(newindex)] = data.max().value
+    params = ['TDETX', 'TDETXW', 'TDETY', 'TDELT', 'TWAVE', 'TWMIN', 'TWMAX',
+              'TWBND', 'WINHDR', 'CCDRON']
+    for p in params:
+        newcard = p + str(newindex)
+        oldcard = p + str(oldindex)
+        newheader[newcard] = oldheader[oldcard]
 
 
 def _filename(header, filetype):
@@ -153,3 +173,14 @@ def _filename(header, filetype):
     datestr = date.strftime("%Y%m%d_%H%M%S")
     filename = "eis_" + filetype + "_" + datestr + ".fits"
     return filename
+
+
+def _remove_unreadable_cards(header):
+    try:
+        dict(header)
+    except fits.VerifyError as err:
+        card = re.findall(r'\([^)]*\)', err.message)[0][1:-1]
+        warnings.warn("WARNING: Card " + card + " was removed because it had" +
+                      " an unreadable ASCII value.", UserWarning)
+        header[card] = 0
+        _remove_unreadable_cards(header)
