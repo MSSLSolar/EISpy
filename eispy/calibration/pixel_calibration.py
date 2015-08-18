@@ -9,6 +9,7 @@ import datetime as dt
 import numpy as np
 from scipy.io import readsav
 import locale
+import heapq
 from bs4 import BeautifulSoup
 import urllib
 from eispy.calibration.constants import missing, darts
@@ -129,8 +130,8 @@ def _remove_dark_current_part_ccd(data):
         The CCD data
     """
     flatarr = data.flatten()
-    flatarr.sort()
-    low_value = np.median(flatarr[:0.02 * flatarr.shape[0]])
+    lowest = 0.01 * flatarr.shape[0]
+    low_value = heapq.nsmallest(int(lowest), flatarr)[-1]
     data -= low_value
 
 

@@ -58,10 +58,8 @@ def remove_cosmic_rays(*data_and_errors, **kwargs):
         Extra arguments to be passed on to astroscrappy.
     """
     newargs = _clean_kwargs(**kwargs)
-    for data, err, _ in data_and_errors:
-        slices = [asc.detect_cosmics(data[i], inmask=(err[i] == missing),
-                                     **newargs) for i in range(data.shape[0])]
-        data = np.array([ccd_slice[1] for ccd_slice in slices])
+    for data, err, index in data_and_errors:
+        _rem_cr_array(data, err, index, **newargs)
 
 
 def correct_sensitivity(meta, *data_and_errors):
@@ -298,3 +296,10 @@ def _clean_kwargs(**kwargs):
                    'verbose']
     cosmic_kwargs = {k: kwargs[k] for k in kwargs if k in cosmic_args}
     return cosmic_kwargs
+
+
+def _rem_cr_array(data, err, index, **kwargs):
+    for i in range(data.shape[0]):
+        mask = err[i] == missing
+        data[i] = asc.detect_cosmics(data[i], inmask=mask, **kwargs)[1]
+        del mask

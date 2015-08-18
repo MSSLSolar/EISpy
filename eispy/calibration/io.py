@@ -34,9 +34,10 @@ def read_fits(filename, **kwargs):
     _remove_unreadable_cards(hdulist[0].header)
     _remove_unreadable_cards(hdulist[1].header)
     header = dict(hdulist[1].header)
+    windows = kwargs.get('windows', None)
     waves = [c.name for c in hdulist[1].columns if c.dim is not None]
     data = {wav: np.array(hdulist[1].data[wav], dtype=u.Quantity)
-            for wav in waves}
+            for wav in waves if windows is None or wav in windows}
     data_with_errors = [(data[k], np.zeros(data[k].shape),
                          waves.index(k) + 1) for k in data]
     return data_with_errors, header
@@ -61,11 +62,11 @@ def write_to_fits(outdir, filename_in, *data_and_errors, **kwargs):
     hdulist = fits.open(filename_in, memmap=True)
     main_header = hdulist[0].header
     data_header = hdulist[1].header
+    win = main_header['NWIN']
     _remove_unreadable_cards(main_header)
     _remove_unreadable_cards(data_header)
     _update_header(main_header, **kwargs)
     _update_header(data_header, **kwargs)
-    win = len(data_and_errors)
     data_columns = [_get_column(hdulist[1], data, index)
                     for data, _, index in data_and_errors]
     err_columns = [_get_column(hdulist[1], err, index)
@@ -82,10 +83,10 @@ def write_to_fits(outdir, filename_in, *data_and_errors, **kwargs):
     dataoutlist = fits.HDUList([hdulist[0], newdatahdu])
     erroutlist = fits.HDUList([hdulist[0], newerrhdu])
     clobber = kwargs.pop('clobber', True)
-    dataoutlist.writeto(outdir + _filename(main_header, 'l1'), clobber=clobber,
-                        output_verify='ignore')
-    erroutlist.writeto(outdir + _filename(main_header, 'er'), clobber=clobber,
-                       output_verify='ignore')
+    dataoutlist.writeto(outdir + _filename(main_header, 'l1', **kwargs),
+                        clobber=clobber, output_verify='ignore')
+    erroutlist.writeto(outdir + _filename(main_header, 'er', **kwargs),
+                       clobber=clobber, output_verify='ignore')
 
 
 # =========================    FITS Output utils    ==========================
@@ -96,6 +97,8 @@ def _update_header(header, **kwargs):
     """
     header['DATA_LEV'] = 1
     header['NAXIS'] = 3
+    if 'windows' in kwargs:
+        header['NWIN'] = len(kwargs['windows'])
     now = dt.datetime.now().strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3]
     _delete_cards(header)
     header.insert('TELESCOP', ('DATE_RF1', now,
@@ -165,13 +168,14 @@ def _clean_data_header(newhdu, oldhdu, data, oldindex):
         newheader[newcard] = oldheader[oldcard]
 
 
-def _filename(header, filetype):
+def _filename(header, filetype, **kwargs):
     """
     Returns the filename of the new file
     """
     date = dt.datetime.strptime(header['DATE_OBS'], "%Y-%m-%dT%H:%M:%S.000")
     datestr = date.strftime("%Y%m%d_%H%M%S")
-    filename = "eis_" + filetype + "_" + datestr + ".fits"
+    reduced = "_reduced" if 'windows' in kwargs else ""
+    filename = "eis_" + filetype + "_" + datestr + reduced + ".fits"
     return filename
 
 

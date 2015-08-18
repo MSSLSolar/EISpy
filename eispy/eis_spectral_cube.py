@@ -99,7 +99,7 @@ class EISSpectralCube(SpectralCube):
         time_corr *= 0.022317
         time_corr *= u.Angstrom
         corrections = [slit_tilt_corr + t for t in time_corr]
-        return np.array(corrections) * u.Angstrom
+        return u.Quantity(corrections) * -1.
 
     def _get_slit_tilt(self):
         """

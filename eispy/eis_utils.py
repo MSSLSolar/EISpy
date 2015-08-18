@@ -24,6 +24,7 @@ __detector__ = {'LONG': {'refwvl': 199.9389,
                 'SHORT': {'refwvl': 166.131,
                           'dispersion': 0.022317, 'dispersion_sq' : -1.268e-8}}
 
+
 def get_dict_from_file(date, prefix="eis3"):
     """
     Reads an IDL .sav file containing EIS housekeeping data and returns its
@@ -314,13 +315,25 @@ def wavelength_to_ccd_pixel(wavelength):
     pixel = np.sqrt(detector['dispersion']**2 - pixel)
     pixel -= detector['dispersion']
     pixel /= 2
-    pixel /=  detector['dispersion_sq']
+    pixel /= detector['dispersion_sq']
     return pixel
 
 
 def ccd_pixel_to_wavelength(pixel, band):
+    """
+    Converts pixel values on the CCD to real wavelength values.
+
+    Parameters
+    ----------
+    pixel: int or ndarray of ints
+        Pixel values to convert
+    band: 'LONG' | 'SHORT'
+        CCD waveband in question
+    """
     detector = __detector__[band]
-    return detector['refwvl'] + detector['dispersion'] * pixel + detector['dispersion_sq'] * pixel**2
+    return (detector['refwvl'] + detector['dispersion'] * pixel +
+            detector['dispersion_sq'] * pixel**2)
+
 
 def calc_doppler_shift(times):
     """

@@ -57,6 +57,9 @@ def eis_prep(filename, **kwargs):
         (photons*cm^-2*s^-1*A^-1*sr^-1) instead of spectral radiance - aka
         specific intensity (erg*cm^-2*s^-1*A^-1*sr^-1). Notice that doing this
         conversion will also change the errors to have the correct units.
+    windows: list of strs, optional
+        list of which windows to calculate and include in the data. If this is
+        not None, the resultant filename will have "reduced" appended to it.
     institute='Unknown institute': str
         Institute where this method is run, to write to the FITS file.
     outdir=None: str
