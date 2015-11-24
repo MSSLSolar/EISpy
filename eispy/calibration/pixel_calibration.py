@@ -224,10 +224,10 @@ def _construct_hot_warm_pix_url(date, pix_type, detector, top_bot, left_right):
     url += pix_type + '/'
     url += date.strftime("%Y-%m-%d") + '/'
     url += 'coords_' + detector + '_' + left_right + '_'
-    loc = locale.getlocale()
-    locale.setlocale(locale.LC_ALL, 'en_GB')
+    #loc = locale.getlocale()
+    #locale.setlocale(locale.LC_ALL, 'en_GB')
     datestr = date.strftime("%d%b%y").lower()
-    locale.setlocale(locale.LC_ALL, loc[0])
+    #locale.setlocale(locale.LC_ALL, loc[0])
     if pix_type == 'wp':
         url += top_bot + '_'
         url += datestr + '_100s.sav'

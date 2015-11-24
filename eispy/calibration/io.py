@@ -42,7 +42,6 @@ def read_fits(filename, **kwargs):
                          waves.index(k) + 1) for k in data]
     return data_with_errors, header
 
-
 def write_to_fits(outdir, filename_in, *data_and_errors, **kwargs):
     """
     Writes the given data and errors to a new level 1 and error FITS files,

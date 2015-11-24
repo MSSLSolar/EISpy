@@ -112,9 +112,9 @@ def radiometric_calibration(meta, *data_and_errors, **kwargs):
         seconds_per_exposure = total_time / data.shape[0]
         err = _calculate_errors(data, err, index, meta)
         data /= seconds_per_exposure
-        data /= u.s
+        data = u.Quantity(data, 1/u.s)
         err /= seconds_per_exposure
-        err /= u.s
+        err = u.Quantity(err, 1/u.s)
         _conv_photon_rate_to_intensity(data, err, wavelengths, detector, slit)
         if kwargs.get('phot2int', True):
             _conv_phot_int_to_radiance(data, err, wavelengths)
@@ -136,12 +136,15 @@ def _get_pixel_solid_angle(detector, slit):
     omega-d in the EIS software note 02.
     """
     mirror_focus_length = 1938.68 * u.mm
+    print(slit)
     if slit == 1:
         width = 9.3 * u.um
         pix_factor = 1.067 if detector == 'A' else 1.087
     elif slit == 2:
         width = 19.2 * u.um
         pix_factor = 2.08 if detector == 'A' else 2.119
+    else:
+        return 1
     return (width**2) / (mirror_focus_length**2 * pix_factor)
 
 
@@ -212,9 +215,9 @@ def _get_radiance_factor(wavelengths):
     Returns the radiance conversion factor to convert photon intensities to
     spectral radiance.
     """
-    wavelengths *= u.Angstrom
+    wavelengths = u.Quantity(wavelengths, u.Angstrom)
     dispersion = [eu.calc_dispersion(wav) for wav in wavelengths]
-    dispersion *= u.Angstrom
+    dispersion = u.Quantity(dispersion, u.Angstrom)
     return constants.c * constants.h / (wavelengths * dispersion)
 
 
