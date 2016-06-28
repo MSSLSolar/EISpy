@@ -10,7 +10,7 @@ import re
 from astropy.io import fits
 from astropy import units as u
 import datetime as dt
-from eispy.version import version as eispy_version
+from eispy import __version__ as eispy_version
 from eispy.calibration.constants import sensitivity_tau
 
 __all__ = ['read_fits', 'write_to_fits']

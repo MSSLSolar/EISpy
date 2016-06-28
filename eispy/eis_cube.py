@@ -4,16 +4,20 @@
 
 from __future__ import absolute_import
 
+import numpy as np
+
 from astropy.io import fits
 from astropy.nddata import StdDevUncertainty as sdu
-from sunpy.wcs.wcs import WCS
+
 from sunpycube.cube.datacube import Cube
 from sunpycube.cube import cube_utils as cu
-from sunpy.wcs import wcs_util as wu
-import numpy as np
 from sunpycube.spectra.spectrum import Spectrum
+from sunpycube import wcs_util as wu
+from sunpycube.wcs_util import WCS
+
 from eispy.eis_spectral_cube import EISSpectralCube
 from eispy.calibration.constants import missing
+
 import re
 
 __all__ = ['EISCube']
