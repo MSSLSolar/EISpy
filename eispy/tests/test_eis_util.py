@@ -8,12 +8,12 @@ from eispy import eis_utils as eu
 
 
 def test_get_dict_from_file():
-    df = eu.get_dict_from_file(dt.date(2008, 05, 12))
+    df = eu.get_dict_from_file(dt.date(2008, 5, 12))
     assert df['data'].shape == (42629,)
     assert df['time'].shape == (42629,)
 
 
-@pytest.fixture(params=[1, 2])      
+@pytest.fixture(params=[1, 2])
 def time_corr(request):
     slit = request.param
     location = os.getcwd() + "/eispy/tests/orbit_slit" + str(slit) + "_nointerp.txt"
@@ -39,11 +39,7 @@ def test_get_hk_thermal_correction(time_corr):
         dates = np.array(arrs[month].keys())
         expecteds = np.array(arrs[month].values())
         actuals = eu.calc_hk_thermal_corrections(dates, slit2)
-        print expecteds
-        print actuals
-        print expecteds - actuals
         assert np.allclose(expecteds, actuals)
-        print "month " + str(month) + " passed"
 
 
 def test_datetime_to_ssw_time():

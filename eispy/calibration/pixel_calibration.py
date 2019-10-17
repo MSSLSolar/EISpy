@@ -287,19 +287,19 @@ def _cal_arrays(date, detector, y_window, x_window, shape, **kwargs):
     verbose = kwargs.get('verbose', False)
     if kwargs.get('calhp', True):
         if verbose:
-            print "Fetching hot pixel map..."
+            print("Fetching hot pixel map...")
         hots = _get_pixel_map(date, 'hp', detector, y_window, x_window)
     else:
         hots = np.zeros(shape)
     if kwargs.get('calwp', True):
         if verbose:
-            print "Fetching warm pixel map..."
+            print("Fetching warm pixel map...")
         warms = _get_pixel_map(date, 'wp', detector, y_window, x_window)
     else:
         warms = np.zeros(shape)
     if kwargs.get('caldp', True):
         if verbose:
-            print "Fetching dusty pixel map..."
+            print("Fetching dusty pixel map...")
         dusties = _get_dusty_array(y_window, x_window)
     else:
         dusties = np.zeros(shape)

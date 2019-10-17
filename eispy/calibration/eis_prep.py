@@ -71,14 +71,14 @@ def eis_prep(filename, **kwargs):
     """
     verbose = kwargs.get('verbose', False)
     if verbose:
-        print "Reading file..."
+        print("Reading file...")
     data_and_errors, meta = io.read_fits(filename, **kwargs)
     _pixel_calibration(meta, *data_and_errors, **kwargs)
     data_and_errors = _data_calibration(meta, *data_and_errors, **kwargs)
     outdir = kwargs.pop('outdir', None)
     if outdir is not None:
         if verbose:
-            print "Done! Writing to file..."
+            print("Done! Writing to file...")
         io.write_to_fits(outdir, filename, *data_and_errors, **kwargs)
     else:
         return data_and_errors, meta
@@ -91,15 +91,15 @@ def _pixel_calibration(meta, *data_and_errors, **kwargs):
     verbose = kwargs.get('verbose', False)
     if kwargs.get('zeros', True):
         if verbose:
-            print "Removing zeros and saturated values..."
+            print("Removing zeros and saturated values...")
         pc.remove_zeros_saturated(*data_and_errors)
     if kwargs.get('darkcur', True):
         if verbose:
-            print "Removing Dark Current..."
+            print("Removing Dark Current...")
         pc.remove_dark_current(meta, *data_and_errors)
     if verbose:
-        print "Marking defective pixels..."
-        print "\tThis step may take a long time and requires internet access"
+        print("Marking defective pixels...")
+        print("\tThis step may take a long time and requires internet access")
     pc.calibrate_pixels(meta, *data_and_errors, **kwargs)
 
 
@@ -110,18 +110,18 @@ def _data_calibration(meta, *data_and_errors, **kwargs):
     verbose = kwargs.get('verbose', False)
     if kwargs.get('interp', True):
         if verbose:
-            print "Interpolating missing pixels..."
+            print("Interpolating missing pixels...")
         dc.interpolate_missing_pixels(*data_and_errors)
     if kwargs.get('cosmics', True):
         if verbose:
-            print "Removing cosmic rays..."
+            print("Removing cosmic rays...")
         dc.remove_cosmic_rays(*data_and_errors, **kwargs)
     if kwargs.get('sens', True):
         if verbose:
-            print "Correcting for sensitivity losses"
+            print("Correcting for sensitivity losses")
         dc.correct_sensitivity(meta, *data_and_errors)
     if verbose:
-        print "Converting data into intensity and calculating errors..."
+        print("Converting data into intensity and calculating errors...")
     data_and_errors = dc.radiometric_calibration(meta, *data_and_errors,
                                                  **kwargs)
     return data_and_errors

@@ -30,7 +30,7 @@ from astropy.tests.helper import enable_deprecations_as_exceptions
 ##     warnings_to_ignore_by_pyver={(MAJOR, MINOR): ['Message to ignore']}
 # enable_deprecations_as_exceptions()
 
-# Customize the following lines to add/remove entries from
+"""# Customize the following lines to add/remove entries from
 # the list of packages for which version numbers are displayed when running
 # the tests. Making it pass for KeyError is essential in some cases when
 # the package uses other astropy affiliated packages.
@@ -46,4 +46,4 @@ from .version import version, astropy_helpers_version
 
 packagename = os.path.basename(os.path.dirname(__file__))
 TESTED_VERSIONS[packagename] = version
-TESTED_VERSIONS['astropy_helpers'] = astropy_helpers_version
+TESTED_VERSIONS['astropy_helpers'] = astropy_helpers_version"""
