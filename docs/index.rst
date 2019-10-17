@@ -1,13 +1,15 @@
 Documentation
 =============
 
-This is an affiliated package for the AstroPy package. The documentation for
-this package is here:
+This is the documentation for EISpy.
+
 
 .. toctree::
   :maxdepth: 2
 
-  packagename/index.rst
+  eispy/index.rst
 
-.. note:: Do not edit this page - instead, place all documentation for the
-          affiliated package inside ``packagename/``
+.. note:: The layout of this directory is simply a suggestion.  To follow
+          traditional practice, do *not* edit this page, but instead place
+          all documentation for the package inside ``eispy/``.
+          You can follow this practice or choose your own layout.
