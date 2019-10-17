@@ -1,9 +1,4 @@
-# -*- coding: utf-8 -*-
-# Author: Mateo Inchaurrandieta <mateo.inchaurrandieta@gmail.com>
 '''EIS spectral cube definitions'''
-
-from __future__ import absolute_import
-
 import numpy as np
 
 from astropy.io import fits
@@ -40,7 +35,8 @@ def _clean(header):
 
 
 class EISCube(Cube):
-    '''EIS Cube subclass.
+    '''
+    EIS Cube subclass.
 
     References
     ----------
