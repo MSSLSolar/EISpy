@@ -1,24 +1,33 @@
 # Licensed under a 3-clause BSD style license - see LICENSE.rst
 
-"""
-This is an Astropy affiliated package.
-"""
-
-# Affiliated packages may add whatever they like to this file, but
+# Packages may add whatever they like to this file, but
 # should keep this content at the top.
 # ----------------------------------------------------------------------------
-from __future__ import absolute_import
+from ._astropy_init import *   # noqa
 # ----------------------------------------------------------------------------
 
-try:
-    from .version import version as __version__
-except ImportError:
-    __version__ = ''
+# Enforce Python version check during package import.
+# This is the same check as the one at the top of setup.py
+import sys
+from distutils.version import LooseVersion
 
-try:
-    from .version import githash as __githash__
-except ImportError:
-    __githash__ = ''
+__minimum_python_version__ = "3.7"
 
-from eispy import eis_cube, eis_spectral_cube, eis_utils
-from eispy.calibration import eis_prep
+__all__ = []
+
+
+class UnsupportedPythonError(Exception):
+    pass
+
+
+if LooseVersion(sys.version) < LooseVersion(__minimum_python_version__):
+    raise UnsupportedPythonError("eispy does not support Python < {}"
+                                 .format(__minimum_python_version__))
+
+if not _ASTROPY_SETUP_:   # noqa
+    # For egg_info test builds to pass, put package imports here.
+    from .example_mod import *   # noqa
+    # Then you can be explicit to control what ends up in the namespace,
+    __all__ += ['do_primes']   # noqa
+    # or you can keep everything from the subpackage with the following instead
+    # __all__ += example_mod.__all__
