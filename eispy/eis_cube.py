@@ -3,15 +3,12 @@ import numpy as np
 
 from astropy.io import fits
 from astropy.nddata import StdDevUncertainty as sdu
+from astropy.wcs import WCS
 
-from sunpycube.cube.datacube import Cube
-from sunpycube.cube import cube_utils as cu
-from sunpycube.spectra.spectrum import Spectrum
-from sunpycube import wcs_util as wu
-from sunpycube.wcs_util import WCS
+# from eispy.eis_spectral_cube import EISSpectralCube
+# from eispy.calibration.constants import missing
 
-from eispy.eis_spectral_cube import EISSpectralCube
-from eispy.calibration.constants import missing
+from ndcube import NDCube
 
 import re
 
@@ -27,14 +24,14 @@ def _clean(header):
     header : astropy.io.fits.Header
         The header to be cleaned.
     """
-    header['CTYPE1'] = 'HPLN-TAN'  # Helioprojective longitude, TAN projection
-    header['CTYPE2'] = 'HPLT-TAN'  # Helioprojective latitude, TAN projection
+    header['CTYPE1'] = 'HPLT-TAN'  # Helioprojective longitude, TAN projection
+    header['CTYPE2'] = 'HPLN-TAN'  # Helioprojective latitude, TAN projection
     header['CTYPE3'] = 'WAVE   '  # Wavelength axis, default (TAB) projection
     header['NAXIS'] = 3
     return header
 
 
-class EISCube(Cube):
+class EISCube(NDCube):
     '''
     EIS Cube subclass.
 
@@ -43,42 +40,21 @@ class EISCube(Cube):
     For an overview of the mission
     http://solarb.mssl.ucl.ac.uk/SolarB/
     '''
-    def __init__(self, data, wcs, header, errors=None):
-        '''
-        Constructor function.
-
-        Parameters
-        ----------
-        data: numpy ndarray
-            The cube containing the data
-        wcs: sunpy.wcs.wcs.WCS object
-            The world coordinate system for the array.
-        dataHeader: astropy.io.fits.Header object
-            The header for the BINTableHDU section of the FITS file
-        primaryHeader: astropy.io.fits.Header object
-            The main header for the whole file.
-        '''
-        wcs = WCS(header=header, naxis=3)
-        mask = (errors.array == missing if errors is not None else None)
-        Cube.__init__(self, data, wcs, mask=mask, errors=errors,
-                      meta=header)
-        # Data is transposed here because EIS orders (y, lambda) by x or time,
-        # not (y, x) by lambda.
-
-    @classmethod
-    def read(cls, filename, er_filename=None, **kwargs):
-        """ Reads in a given FITS file and returns a dictionary of new
-        EISSpectralCubes. Additional parameters are given to fits.open.
+    @staticmethod
+    def read(filename, er_filename=None):
+        """
+        Reads in a given FITS file and returns a dictionary of new
+        EISSpectralCubes.
 
         Parameters
         ----------
         filename: string
-            Complete location of the FITS file
+            Location of the FITS file
         er_filename: string
             Location of the error FITS file
         """
-        hdulist = fits.open(name=filename, **kwargs)
-        errlist = fits.open(er_filename) if er_filename is not None else None
+        hdulist = fits.open(name=filename)
+        errlist = fits.open(er_filename) if er_filename else None
         header = _clean(hdulist[0].header)
         # TODO: Make sure each cube has a correct wcs.
         wavelengths = [c.name for c in hdulist[1].columns if c.dim is not None]
@@ -88,18 +64,25 @@ class EISCube(Cube):
         cubes = []
         for i in range(len(data)):
             window = i + 1
-            header = _dictionarize_header(hdulist[1].header, hdulist[0].header,
+            header = _dictionarize_header(hdulist[1].header,
+                                          hdulist[0].header,
                                           window)
+            uncertainty = sdu(errs[i]) if errlist else None
+            header['NAXIS1'], header['NAXIS2'], header['NAXIS3'] = data[i].shape
             wcs = WCS(header=header, naxis=3)
-            uncertainty = sdu(errs[i]) if errlist is not None else None
-            cubes += [EISCube(data[i], wcs, header, errors=uncertainty)]
+            data[i] = data[i].T
+
+            cubes += [EISCube(data[i], wcs, uncertainty=uncertainty)]
         return dict(zip(wavelengths, cubes))
 
+    '''
     @classmethod
     def is_datasource_for(cls, data, header, **kwargs):
         # TODO: This will have to be changed once other sources are added.
         return True
+    '''
 
+    '''
     def convert_to_spectral_cube(self):
         """
         Converts this cube into an EISSpectralCube. It will only work if the
@@ -120,6 +103,7 @@ class EISCube(Cube):
             for j in range(y_size):
                 spectra[i][j] = self.slice_to_spectrum(j, i)
         return EISSpectralCube(spectra, newwcs, self.meta)
+    '''
 
 
 def _is_in_window(key, window):
@@ -156,13 +140,14 @@ def _dictionarize_header(data_header, primary_header, window):
     '''
     ph = dict(primary_header)
     dh = {}
-    for k in data_header:
-        if _is_in_window(k, window):
-            newkey = re.sub(r'\d+$', '', k)
-            dh[newkey] = data_header[k]
+    for key in data_header:
+        if _is_in_window(key, window):
+            newkey = re.sub(r'\d+$', '', key)
+            dh[newkey] = data_header[key]
 
     dh.update(ph)
     dh['CRPIX3'] = 1
     dh['CRVAL3'] = dh['TWAVE']
     dh.pop('COMMENT', '')
+    dh.pop('NAXIS1')
     return dh
