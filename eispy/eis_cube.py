@@ -25,10 +25,15 @@ def _clean(header):
     header : astropy.io.fits.Header
         The header to be cleaned.
     """
-    header['CTYPE1'] = 'HPLT-TAN'  # Helioprojective longitude, TAN projection
-    header['CTYPE2'] = 'HPLN-TAN'  # Helioprojective latitude, TAN projection
+    header['CTYPE1'] = 'HPLN-TAN'  # Helioprojective longitude, TAN projection
+    header['CTYPE2'] = 'HPLT-TAN'  # Helioprojective latitude, TAN projection
     header['CTYPE3'] = 'WAVE   '  # Wavelength axis, default (TAB) projection
     header['NAXIS'] = 3
+    header['DATE-OBS'] = header.pop('DATE_OBS')
+    # Drop the non-numbered keys that are already stored in the numbered keys
+    for key in ['CRPIX', 'CRVAL', 'CDELT', 'CUNIT', 'CTYPE', 'CROTA']:
+        if key in header:
+            header.pop(key)
     return header
 
 
