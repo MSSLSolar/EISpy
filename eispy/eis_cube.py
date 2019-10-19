@@ -3,6 +3,7 @@ import numpy as np
 
 from astropy.io import fits
 from astropy.nddata import StdDevUncertainty as sdu
+from astropy.time import Time
 from astropy.wcs import WCS
 
 # from eispy.eis_spectral_cube import EISSpectralCube
@@ -54,7 +55,6 @@ def read(filename, er_filename=None):
     """
     hdulist = fits.open(name=filename)
     errlist = fits.open(er_filename) if er_filename else None
-    header = _clean(hdulist[0].header)
     # TODO: Make sure each cube has a correct wcs.
     wavelengths = [c.name for c in hdulist[1].columns if c.dim is not None]
     data = [hdulist[1].data[wav] for wav in wavelengths]
@@ -71,8 +71,10 @@ def read(filename, er_filename=None):
         wcs = WCS(header=header, naxis=3)
         data[i] = data[i].T
 
-        cubes += [EISCube(data[i], wcs, uncertainty=uncertainty)]
-    return dict(zip(wavelengths, cubes))
+        cubes += [EISCube(data[i], wcs, uncertainty=uncertainty, meta=header)]
+
+    primary_header = _clean(hdulist[0].header)
+    return EISObservation(wavelengths, cubes, primary_header)
 
 
 class EISObservation:
@@ -89,16 +91,22 @@ class EISObservation:
     cubes : list of EISCube
         List of data cubes for each wavelength.
     """
-    def __init__(self, wavelengths, cubes):
-        self._wavelengths = wavelenghts
-        self._cubes = cubes
+    def __init__(self, wavelengths, cubes, primary_header):
+        self._cubes = dict(zip(wavelengths, cubes))
+        self._header = primary_header
+
+    def __getitem__(self, wavelength):
+        """
+        Return the cube corresponding to *wavelength*.
+        """
+        return self.cubes[wavelength]
 
     @property
     def wavelengths(self):
         """
         List of wavelengths.
         """
-        return self._wavelengths
+        return list(self._cubes.keys())
 
     @property
     def cubes(self):
@@ -107,11 +115,9 @@ class EISObservation:
         """
         return self._cubes
 
-    def __get__(self, wavelength):
-        """
-        Return the cube corresponding to *wavelength*.
-        """
-        return self.cubes[wavelength]
+    @property
+    def obs_starttime(self):
+        return Time(self._header['DATE-OBS'])
 
 
 class EISCube(NDCube):
@@ -170,4 +176,5 @@ def _dictionarize_header(data_header, primary_header, window):
     dh['CRVAL3'] = dh['TWAVE']
     dh.pop('COMMENT', '')
     dh.pop('NAXIS1')
-    return dh
+
+    return _clean(dh)
