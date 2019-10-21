@@ -13,7 +13,8 @@ from distutils.version import LooseVersion
 
 __minimum_python_version__ = "3.7"
 
-__all__ = []
+from .eis_cube import *
+__all__ = ['EISObservation', 'EISCube', 'read']
 
 
 class UnsupportedPythonError(Exception):

@@ -13,7 +13,7 @@ from ndcube import NDCube
 
 import re
 
-__all__ = ['EISCube']
+__all__ = ['EISObservation', 'EISCube', 'read']
 
 
 def _clean(header):
@@ -117,6 +117,9 @@ class EISObservation:
 
     @property
     def obs_starttime(self):
+        """
+        Observation start time.
+        """
         return Time(self._header['DATE-OBS'])
 
 
