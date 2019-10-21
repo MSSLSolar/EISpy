@@ -13,7 +13,7 @@ from ndcube import NDCube
 
 import re
 
-__all__ = ['EISCube']
+__all__ = ['read', 'EISCube', 'EISObservation', 'EISObservationL2']
 
 
 def _clean(header):
@@ -45,9 +45,9 @@ def read(filename, er_filename=None):
     Parameters
     ----------
     filename: string
-        Location of the FITS file
+        Location of the FITS file.
     er_filename: string
-        Location of the error FITS file
+        Location of the error FITS file.
 
     Returns
     -------
@@ -67,6 +67,11 @@ def read(filename, er_filename=None):
                                       hdulist[0].header,
                                       window)
         uncertainty = sdu(errs[i]) if errlist else None
+
+        if data_level == 2:
+            vmap = data[...]
+            wmap = data[...]
+
         header['NAXIS1'], header['NAXIS2'], header['NAXIS3'] = data[i].shape
         wcs = WCS(header=header, naxis=3)
         data[i] = data[i].T
@@ -90,6 +95,8 @@ class EISObservation:
         List of wavelengths observed.
     cubes : list of EISCube
         List of data cubes for each wavelength.
+    primary_header : dict
+        Primary data header for this observation.
     """
     def __init__(self, wavelengths, cubes, primary_header):
         self._cubes = dict(zip(wavelengths, cubes))
@@ -118,6 +125,32 @@ class EISObservation:
     @property
     def obs_starttime(self):
         return Time(self._header['DATE-OBS'])
+
+
+class EISObservationL2(EISObservation):
+    """
+    An EIS observation derived from an L2 data product.
+
+    In addition to spectral intensities, also contains rough estimates of the
+    velocity and width maps.
+
+    Parameters
+    ----------
+    wavelengths : list of str
+        List of wavelengths observed.
+    cubes : list of EISCube
+        List of data cubes for each wavelength.
+    """
+    def __init__(self, wavelengths, cubes, primary_header, vmaps, wmaps):
+        super.__init__(wavelengths, cubes, primary_header)
+        self._vmaps = dict(zip(wavelengths, vmaps))
+        self._wmaps = dict(zip(wavelengths, wmaps))
+
+    def velocity_map(wavelength):
+        return self._vmaps[wavelength]
+
+    def width_map(wavelength):
+        return self._wmaps[wavelength]
 
 
 class EISCube(NDCube):
