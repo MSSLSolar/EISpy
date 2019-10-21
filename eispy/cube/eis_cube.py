@@ -38,7 +38,11 @@ def read(filename, er_filename=None):
     data = [hdulist[1].data[wav] for wav in wavelengths]
     errs = [errlist[1].data[wav] if errlist is not None else None
             for wav in wavelengths]
+    is_l2 = hdulist[0].header['DATA_LEV'] == 2
     cubes = []
+    if is_l2:
+        vmaps, wmaps = [], []
+
     for i in range(len(data)):
         window = i + 1
         header = _dictionarize_header(hdulist[1].header,
@@ -46,9 +50,10 @@ def read(filename, er_filename=None):
                                       window)
         uncertainty = sdu(errs[i]) if errlist else None
 
-        if data_level == 2:
-            vmap = data[...]
-            wmap = data[...]
+        if is_l2:
+            vmaps.append(data[i][:, :, 0].T)
+            wmaps.append(data[i][:, :, 1].T)
+            data[i] = data[i][:, :, 2:]
 
         header['NAXIS1'], header['NAXIS2'], header['NAXIS3'] = data[i].shape
         wcs = WCS(header=header, naxis=3)
@@ -57,7 +62,10 @@ def read(filename, er_filename=None):
         cubes += [EISCube(data[i], wcs, uncertainty=uncertainty, meta=header)]
 
     primary_header = _clean(hdulist[0].header)
-    return EISObservation(wavelengths, cubes, primary_header)
+    if is_l2:
+        return EISObservationL2(wavelengths, cubes, primary_header, vmaps, wmaps)
+    else:
+        return EISObservation(wavelengths, cubes, primary_header)
 
 
 class EISObservation:
@@ -120,7 +128,7 @@ class EISObservationL2(EISObservation):
         List of data cubes for each wavelength.
     """
     def __init__(self, wavelengths, cubes, primary_header, vmaps, wmaps):
-        super.__init__(wavelengths, cubes, primary_header)
+        super().__init__(wavelengths, cubes, primary_header)
         self._vmaps = dict(zip(wavelengths, vmaps))
         self._wmaps = dict(zip(wavelengths, wmaps))
 
@@ -140,7 +148,8 @@ class EISCube(NDCube):
     For an overview of the mission
     http://solarb.mssl.ucl.ac.uk/SolarB/
     '''
-    pass
+    def total_intensity(self):
+        pass
 
 
 def _is_in_window(key, window):
