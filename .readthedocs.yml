@@ -22,4 +22,4 @@ python:
   install:
     - requirements: docs/rtd-pip-requirements.txt
     - method: pip
-        path: eispy
+      path: eispy
