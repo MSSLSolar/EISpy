@@ -5,6 +5,7 @@ Tools for working with Hindoe EIS data
     :target: http://www.astropy.org
     :alt: Powered by Astropy Badge
 
+[![Documentation Status](https://readthedocs.org/projects/eispy/badge/?version=latest)](https://eispy.readthedocs.io/en/latest/?badge=latest)
 
 
 
