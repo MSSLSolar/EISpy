@@ -8,6 +8,7 @@ import os
 import datetime as dt
 import warnings
 import urllib
+import pathlib
 
 from scipy.io import readsav
 from scipy.interpolate import interp1d
@@ -46,14 +47,14 @@ def get_dict_from_file(date, prefix="eis3"):
     if key in __housekeeping_memo__:
         file_dict = __housekeeping_memo__[key]
     else:
-        download_dir = os.path.join(sunpy.util.config._get_home(),
-                                    'EISpy', 'eispy', 'data', key)
+        download_dir = pathlib.Path('~') / 'EISpy' / 'eispy' / 'data' / key
+        download_dir.parent.mkdir(parents=True, exist_ok=True)
         try:
-            file_dict = readsav(download_dir, python_dict=True)
+            file_dict = readsav(str(download_dir), python_dict=True)
         except IOError:
             url = "http://sdc.uio.no/eis_wave_corr_hk_data/" + key
-            urllib.urlretrieve(url, filename=download_dir)
-            file_dict = readsav(download_dir, python_dict=True)
+            urllib.request.urlretrieve(url, filename=download_dir)
+            file_dict = readsav(str(download_dir), python_dict=True)
             warnings.warn("File was not found, so it was downloaded and " +
                           "placed at the given location", UserWarning)
         __housekeeping_memo__.update({key: file_dict})

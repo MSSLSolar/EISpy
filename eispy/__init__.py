@@ -13,8 +13,6 @@ from distutils.version import LooseVersion
 
 __minimum_python_version__ = "3.7"
 
-__all__ = []
-
 
 class UnsupportedPythonError(Exception):
     pass

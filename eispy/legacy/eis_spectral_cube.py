@@ -1,12 +1,6 @@
-# -*- coding: utf-8 -*-
-# Author: Mateo Inchaurrandieta <mateo.inchaurrandieta@gmail.com>
-# pylint: disable=E1101
 """
 Class for the EIS spectral cube.
 """
-
-from sunpycube.spectra.spectral_cube import SpectralCube
-from sunpycube.cube import cube_utils as cu
 import numpy as np
 from scipy.signal import savgol_filter
 from eispy import eis_utils as eu
