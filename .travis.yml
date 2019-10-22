@@ -34,7 +34,7 @@ install:
     - source ci-helpers/travis/setup_conda.sh
 
 script:
-   - cd docs ; make html ; cd ..
+   # - cd docs ; make html ; cd ..
    - cookiecutter --no-input ./ -o ../test $EXTRA_CONTEXT $FLAGS
    - cd ../test/$FOLDERNAME
    - if [[ $TASK == 'test' ]]; then python setup.py egg_info; fi
