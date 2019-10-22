@@ -13,29 +13,7 @@ from ndcube import NDCube
 
 import re
 
-__all__ = ['EISObservation', 'EISCube', 'read']
-
-
-def _clean(header):
-    # TODO: find a way to identify cubes containing time
-    """
-    Fixes non-standard or deprecated CTYPEn FITS keywords.
-
-    Parameters
-    ----------
-    header : astropy.io.fits.Header
-        The header to be cleaned.
-    """
-    header['CTYPE1'] = 'HPLN-TAN'  # Helioprojective longitude, TAN projection
-    header['CTYPE2'] = 'HPLT-TAN'  # Helioprojective latitude, TAN projection
-    header['CTYPE3'] = 'WAVE   '  # Wavelength axis, default (TAB) projection
-    header['NAXIS'] = 3
-    header['DATE-OBS'] = header.pop('DATE_OBS')
-    # Drop the non-numbered keys that are already stored in the numbered keys
-    for key in ['CRPIX', 'CRVAL', 'CDELT', 'CUNIT', 'CTYPE', 'CROTA']:
-        if key in header:
-            header.pop(key)
-    return header
+__all__ = ['read', 'EISCube', 'EISObservation', 'EISObservationL2']
 
 
 def read(filename, er_filename=None):
@@ -45,9 +23,9 @@ def read(filename, er_filename=None):
     Parameters
     ----------
     filename: string
-        Location of the FITS file
+        Location of the FITS file.
     er_filename: string
-        Location of the error FITS file
+        Location of the error FITS file.
 
     Returns
     -------
@@ -60,13 +38,23 @@ def read(filename, er_filename=None):
     data = [hdulist[1].data[wav] for wav in wavelengths]
     errs = [errlist[1].data[wav] if errlist is not None else None
             for wav in wavelengths]
+    is_l2 = hdulist[0].header['DATA_LEV'] == 2
     cubes = []
+    if is_l2:
+        vmaps, wmaps = [], []
+
     for i in range(len(data)):
         window = i + 1
         header = _dictionarize_header(hdulist[1].header,
                                       hdulist[0].header,
                                       window)
         uncertainty = sdu(errs[i]) if errlist else None
+
+        if is_l2:
+            vmaps.append(data[i][:, :, 0].T)
+            wmaps.append(data[i][:, :, 1].T)
+            data[i] = data[i][:, :, 2:]
+
         header['NAXIS1'], header['NAXIS2'], header['NAXIS3'] = data[i].shape
         wcs = WCS(header=header, naxis=3)
         data[i] = data[i].T
@@ -74,7 +62,10 @@ def read(filename, er_filename=None):
         cubes += [EISCube(data[i], wcs, uncertainty=uncertainty, meta=header)]
 
     primary_header = _clean(hdulist[0].header)
-    return EISObservation(wavelengths, cubes, primary_header)
+    if is_l2:
+        return EISObservationL2(wavelengths, cubes, primary_header, vmaps, wmaps)
+    else:
+        return EISObservation(wavelengths, cubes, primary_header)
 
 
 class EISObservation:
@@ -90,6 +81,8 @@ class EISObservation:
         List of wavelengths observed.
     cubes : list of EISCube
         List of data cubes for each wavelength.
+    primary_header : dict
+        Primary data header for this observation.
     """
     def __init__(self, wavelengths, cubes, primary_header):
         self._cubes = dict(zip(wavelengths, cubes))
@@ -123,6 +116,32 @@ class EISObservation:
         return Time(self._header['DATE-OBS'])
 
 
+class EISObservationL2(EISObservation):
+    """
+    An EIS observation derived from an L2 data product.
+
+    In addition to spectral intensities, also contains rough estimates of the
+    velocity and width maps.
+
+    Parameters
+    ----------
+    wavelengths : list of str
+        List of wavelengths observed.
+    cubes : list of EISCube
+        List of data cubes for each wavelength.
+    """
+    def __init__(self, wavelengths, cubes, primary_header, vmaps, wmaps):
+        super().__init__(wavelengths, cubes, primary_header)
+        self._vmaps = dict(zip(wavelengths, vmaps))
+        self._wmaps = dict(zip(wavelengths, wmaps))
+
+    def velocity_map(wavelength):
+        return self._vmaps[wavelength]
+
+    def width_map(wavelength):
+        return self._wmaps[wavelength]
+
+
 class EISCube(NDCube):
     '''
     EIS Cube subclass.
@@ -132,7 +151,8 @@ class EISCube(NDCube):
     For an overview of the mission
     http://solarb.mssl.ucl.ac.uk/SolarB/
     '''
-    pass
+    def total_intensity(self):
+        pass
 
 
 def _is_in_window(key, window):
@@ -181,3 +201,25 @@ def _dictionarize_header(data_header, primary_header, window):
     dh.pop('NAXIS1')
 
     return _clean(dh)
+
+
+def _clean(header):
+    # TODO: find a way to identify cubes containing time
+    """
+    Fixes non-standard or deprecated CTYPEn FITS keywords.
+
+    Parameters
+    ----------
+    header : astropy.io.fits.Header
+        The header to be cleaned.
+    """
+    header['CTYPE1'] = 'HPLN-TAN'  # Helioprojective longitude, TAN projection
+    header['CTYPE2'] = 'HPLT-TAN'  # Helioprojective latitude, TAN projection
+    header['CTYPE3'] = 'WAVE   '  # Wavelength axis, default (TAB) projection
+    header['NAXIS'] = 3
+    header['DATE-OBS'] = header.pop('DATE_OBS')
+    # Drop the non-numbered keys that are already stored in the numbered keys
+    for key in ['CRPIX', 'CRVAL', 'CDELT', 'CUNIT', 'CTYPE', 'CROTA']:
+        if key in header:
+            header.pop(key)
+    return header
