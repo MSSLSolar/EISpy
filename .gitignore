@@ -49,3 +49,6 @@ distribute-*.tar.gz
 # Mac OSX
 .DS_Store
 *.sav
+
+*.fits
+*.fits.gz
