@@ -9,6 +9,10 @@ Tools for working with Hindoe EIS data
     :target: https://eispy.readthedocs.io/en/latest/?badge=latest
     :alt: Documentation Status
 
+.. image:: https://travis-ci.com/dstansby/EISpy.svg?branch=master
+    :target: https://travis-ci.com/dstansby/EISpy
+    :alt: Travis build status
+
 
 License
 -------
