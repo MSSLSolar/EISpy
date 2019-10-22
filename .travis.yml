@@ -39,7 +39,7 @@ script:
    # - cd ../test/$FOLDERNAME
    - if [[ $TASK == 'test' ]]; then python setup.py egg_info; fi
    - if [[ $TASK == 'test' ]]; then python setup.py build; fi
-   - if [[ $TASK == 'test' ]]; then python setup.py build_docs; fi
+   # - if [[ $TASK == 'test' ]]; then python setup.py build_docs; fi
    - if [[ $TASK == 'test' ]]; then python setup.py test; fi
    - if [[ $TASK == 'error_check' ]]; then python setup.py egg_info 2>&1 | grep "ERROR:"; fi
 
