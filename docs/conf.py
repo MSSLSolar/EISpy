@@ -105,12 +105,13 @@ release = package.__version__
 #html_theme = None
 
 
-html_theme_options = {
+'''html_theme_options = {
     'logotext1': 'EISpy',  # white,  semi-bold
     'logotext2': '',  # orange, light
     'logotext3': ':docs'   # white,  light
     }
-
+'''
+from sunpy_sphinx_theme.conf import *
 
 # Custom sidebar templates, maps document names to template names.
 # html_sidebars = {}

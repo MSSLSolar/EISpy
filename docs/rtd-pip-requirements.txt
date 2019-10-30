@@ -4,3 +4,4 @@ astropy-helpers
 astropy
 sphinx_astropy
 sphinx-gallery
+sunpy_sphinx_theme
