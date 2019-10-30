@@ -38,9 +38,9 @@ jobs:
     - name: "Unit tests"
       script:
          - python -m pip install pytest-cov
-         - python setup.py egg_info; fi
-         - python setup.py build; fi
-         - python setup.py test; fi
+         - python setup.py egg_info
+         - python setup.py build
+         - python setup.py test
     - name: "Build docs"
       script:
         - cd docs
