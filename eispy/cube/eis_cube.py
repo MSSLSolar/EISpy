@@ -34,7 +34,9 @@ def read(filename, er_filename=None):
     hdulist = fits.open(name=filename)
     errlist = fits.open(er_filename) if er_filename else None
     # TODO: Make sure each cube has a correct wcs.
+    hdulist[1].verify('fix')
     wavelengths = [c.name for c in hdulist[1].columns if c.dim is not None]
+
     data = [hdulist[1].data[wav] for wav in wavelengths]
     errs = [errlist[1].data[wav] if errlist is not None else None
             for wav in wavelengths]
@@ -151,8 +153,14 @@ class EISCube(NDCube):
     For an overview of the mission
     http://solarb.mssl.ucl.ac.uk/SolarB/
     '''
+    @property
     def total_intensity(self):
-        pass
+        """
+        The intensity summed over an entire spectral window.
+        """
+        data = np.sum(self.data, axis=0)
+        wcs = self.wcs.dropaxis(2)
+        return NDCube(data, wcs)
 
 
 def _is_in_window(key, window):
@@ -198,7 +206,7 @@ def _dictionarize_header(data_header, primary_header, window):
     dh['CRPIX3'] = 1
     dh['CRVAL3'] = dh['TWAVE']
     dh.pop('COMMENT', '')
-    dh.pop('NAXIS1')
+    dh.pop('NAXIS1', '')
 
     return _clean(dh)
 
