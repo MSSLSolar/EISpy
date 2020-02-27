@@ -9,11 +9,11 @@ Tools for working with Hindoe EIS data
     :target: https://eispy.readthedocs.io/en/latest/?badge=latest
     :alt: Documentation Status
 
-.. image:: https://travis-ci.com/dstansby/EISpy.svg?branch=master
+.. image::  https://travis-ci.org/MSSLSolar/EISpy.svg?branch=master
     :target: https://travis-ci.com/dstansby/EISpy
     :alt: Travis build status
 
-.. image:: https://codecov.io/gh/dstansby/eispy/branch/master/graph/badge.svg
+.. image:: https://codecov.io/gh/MSSLSolar/eispy/branch/master/graph/badge.svg
     :target: https://codecov.io/gh/dstansby/eispy
     :alt: Code coverage
 
