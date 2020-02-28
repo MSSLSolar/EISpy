@@ -15,7 +15,7 @@ env:
         - FOLDERNAME='eispy'
         - PYTHON_VERSION=3.7
         - CONDA_DEPENDENCIES='astropy sphinx graphviz'
-        - PIP_DEPENDENCIES='cookiecutter gitpython pytest-astropy sphinx-astropy sunpy_sphinx_theme'
+        - PIP_DEPENDENCIES='cookiecutter gitpython pytest-astropy sphinx-astropy sunpy_sphinx_theme sunpy'
         - EVENT_TYPE='pull_request push'
         - TASK='test'
         - EXTRA_CONTEXT=''
