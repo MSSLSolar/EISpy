@@ -1,7 +1,7 @@
 from sunpy.net import Fido, attrs
 import pytest
 
-from eispy.cube import read, EISObservationL2
+from eispy.cube import read, EISObservation
 
 
 @pytest.mark.remote_data
