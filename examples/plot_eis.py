@@ -10,29 +10,22 @@ import eispy.cube
 import matplotlib.pyplot as plt
 import matplotlib.colors as mcolor
 import numpy as np
+from sunpy.net import Fido, attrs
 
 ###############################################################################
 # Download an EIS level 0 file
-fname = 'eis_l0_20100723_143210.fits'
-remote_dir = 'http://solar.ads.rl.ac.uk/MSSL-data/eis/level0/2010/07/23'
-
-if not os.path.exists(fname) and not os.path.exists(f'{fname}.gz'):
-    import urllib.request
-    dl = f'{remote_dir}/{fname}.gz'
-    urllib.request.urlretrieve(dl, f'{fname}.gz')
-
-if not os.path.exists(fname):
-    import gzip
-    with gzip.open(f'{fname}.gz', 'rb') as f:
-        with open(fname, 'wb') as g:
-            g.write(f.read())
+res = Fido.search(attrs.Instrument('EIS'),
+                  attrs.Time('2010-07-23 14:30:00', '2010-07-23 14:35:00'))
+print(res)
+downloaded_files = Fido.fetch(res)
+print(downloaded_files)
 
 ###############################################################################
 # Read in the downloaded file.
 #
 # Note that this raises several warnings because
 # the fits header doesn't fully comply with the fits standard.
-observation = eispy.cube.read(fname)
+observation = eispy.cube.read(downloaded_files[0])
 
 ###############################################################################
 # The resulting object is an EISObservation, that contains a number of
