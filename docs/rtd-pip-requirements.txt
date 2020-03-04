@@ -2,6 +2,7 @@ numpy
 matplotlib
 astropy-helpers
 astropy
+sunpy[net]
 sphinx_astropy
 sphinx-gallery
 sunpy_sphinx_theme
