@@ -1,6 +1,8 @@
 Tools for working with Hindoe EIS data
 --------------------------------------
 
+This repository is no longer developed or supported. For official EIS + python software, see https://github.com/USNavalResearchLaboratory/eispac.
+
 .. image:: http://img.shields.io/badge/powered%20by-AstroPy-orange.svg?style=flat
     :target: http://www.astropy.org
     :alt: Powered by Astropy Badge
